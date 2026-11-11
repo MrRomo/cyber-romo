@@ -26,13 +26,30 @@ y ajustes.
 - Después de compactar (`/compact`) muestra un estimado (`~62k`) hasta la siguiente respuesta, o el
   total exacto si corres `/context`.
 
-### Espacios: íconos de proyecto y worktrees
+### Espacios: íconos de proyecto, ícono a elección y worktrees
 
 ![Lista de espacios: cada proyecto con su ícono; el worktree nebula-web-checkout debajo de nebula-web, y a la derecha plegado con un contador de 1](docs/spaces.png)
 
 - Cada espacio lleva el ícono del proyecto (`logo.svg`, `icon.png`, `public/favicon.svg`, …) o un
   avatar de color.
 - Los worktrees de git aparecen debajo de su repo; el botón los pliega y deja un contador.
+
+**Renombrar con ícono y color.** Clic derecho en un espacio › **Rename** (o `shift-f2`) abre un
+diálogo con el nombre, el ícono y el color:
+
+![Diálogo Rename space: nombre, ícono (Auto, Letter, texto o emoji), seis colores, buscador y cuadrícula de íconos, e imagen propia; a la izquierda la lista con un logo de proyecto, el ícono de Node, un emoji y el glifo de terminal](docs/rename.png)
+
+- **Auto**: el ícono del proyecto, o la inicial si no tiene.
+- **Letter**: la inicial aunque el proyecto tenga ícono.
+- **Text**: una o dos letras o un emoji (`OC`, `🚀`).
+- **Íconos de Herdr**: más de 130 (docker, python, node, go, kubectl, terminal, server, …),
+  con buscador; se tiñen con el color del espacio.
+- **Imagen propia**: la ruta a un `.svg` o `.png` (`~/Pictures/logo.png`, o relativa al proyecto).
+  Se copia a la carpeta de Herdr, así que puedes mover o borrar el original.
+- **Color**: seis tonos para el fondo de la letra, el texto o el ícono.
+- Con el nombre vacío, el espacio vuelve a llamarse como su carpeta.
+- Vale también para worktrees y espacios de máquinas remotas. Se guarda en el `shared.json` de
+  esta instalación de Herdr (`space.icons`, `space.colors`) y la imagen en `data/space-rename/`.
 
 ### Paneles: Files, Changes y Graph
 
@@ -61,12 +78,14 @@ Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-ap
 | `mods/brand-chrome` | Barra de título con el logo MrRomo | propio (clon de `workspace-chrome`) | sí |
 | `mods/brand-title` | Fuente Orbitrox que usan brand-chrome y brand-splash | propio; Orbitron bajo OFL | sí |
 | `mods/brand-splash` | Splash MrRomo | propio | sí |
+| `mods/space-rename` | Diálogo para renombrar un espacio y elegir su ícono y color | propio | sí |
+| `mods/space-menu` | Menú del clic derecho en un espacio; su Rename abre space-rename | propio (copia del `menu` de Herdr) | sí |
 | `mods/git-graph` | Grafo de git y acciones (panel Graph) | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT | sí (`licenses/git-graph-MIT.txt`) |
 | `file-editor` | Explorador y editor con pestañas (panel Files) | [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor) v0.1.1 | **no**: se descarga |
-| `spaces-icons` | Espacios con ícono, worktrees bajo su repo | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) + `patches/spaces-icons.patch` | **no**: se descarga y se parcha |
+| `spaces-icons` | Espacios con ícono, worktrees bajo su repo; el parche agrega el ícono elegido, el menú propio, `shift-f2` y conserva los colores al reiniciar | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) + `patches/spaces-icons.patch` | **no**: se descarga y se parcha |
 | `tabs-graph` | Pestañas en píldoras + Files / Changes / Graph | MarcozVD/herdr-layout-catppuccin + `patches/tabs-graph.patch` | **no**: se descarga y se parcha |
 | `herdr-catppuccin`, `herdr-catppuccin-latte` | Tema oscuro (mocha) y claro (latte); el layout sigue el modo del sistema | MarcozVD/herdr-layout-catppuccin | **no**: se descargan |
-| `config/keys.json`, `config/settings.json` | Teclas (cmd-shift-l cambia de layout, cmd-d divide, …) y ajustes (zoom 1.2, Geist Mono, modo oscuro, sonidos) | propios | sí |
+| `config/keys.json`, `config/settings.json` | Teclas (cmd-shift-l cambia de layout, cmd-d divide, `shift-f2` renombra el espacio con ícono en este layout, …) y ajustes (zoom 1.2, Geist Mono, modo oscuro, sonidos) | propios | sí |
 
 También usa mods que **vienen con Herdr** y no se copian: `workspace-chrome` (pie de la barra
 lateral), `workspace-status`, `pane`, `changes`, `files`, `menu`, `new-menu`, `toast`,

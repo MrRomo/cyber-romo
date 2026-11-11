@@ -69,5 +69,11 @@
     "cmd-left": "send:\u0001",
     "cmd-right": "send:\u0005",
     "cmd-backspace": "send:\u0015"
+  },
+  "layout:catppuccin": {
+    "shift-f2": "spaces-icons.rename"
+  },
+  "layout:cyber-romo": {
+    "shift-f2": "spaces-icons.rename"
   }
 }

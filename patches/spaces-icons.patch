@@ -1,7 +1,59 @@
 diff -ruN a/main.js b/main.js
 --- a/main.js
 +++ b/main.js
-@@ -83,6 +83,8 @@
+@@ -4,12 +4,50 @@
+ // grouped by machine when more than one is known. After a space's name, the repo
+ // its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
+ // switch, right-click for its menu, drag to reorder.
++// cyber-romo: right-click opens space-menu, whose Rename (and shift-f2, as the command
++// `spaces-icons.rename`) opens space-rename: name, icon and color. The icon chosen there
++// (shared "space.icons", see mods/space-rename) wins over the project's own.
+ 
+ import { View, div, svg, image } from "gpui-kit";
+ import { findIcon } from "./icons.js";
+ import { v_flex, h_flex } from "gpui-base";
+-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, home } from "herdr";
++import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, home, nextCommand } from "herdr";
+ 
++// User-perceived characters, so a flag or a family emoji counts as one.
++function graphemes(s) {
++  try { return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment); } catch (_) { return [...s]; }
++}
++
++// The UI font has no emoji and plain text doesn't fall back: draw them with the system's.
++const EMOJI = { macos: "Apple Color Emoji", windows: "Segoe UI Emoji", linux: "Noto Color Emoji" };
++function emojiFont(text) {
++  try { return /\p{Extended_Pictographic}/u.test(text) ? EMOJI[window().platform] ?? null : null; } catch (_) { return null; }
++}
++
++// A space's avatar: the icon chosen in space-rename (`pick`), else the project's own (`icon`),
++// else its first letter on its color (`fill`). As space-rename draws it.
++function avatar(pick, icon, name, fill, size = 18) {
++  const r = Math.max(4, Math.round(size * 0.28));
++  const box = () => h_flex().size(size).flex_none().rounded(r).items_center().justify_center();
++  const kind = pick?.kind;
++  if (kind === "image") return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(pick.value).size(size));
++  if (kind === "glyph") {
++    return pick.tint
++      ? box().bg(fill).child(svg(pick.value).size(Math.round(size * 0.64)).text_color("#ffffff"))
++      : box().child(image(pick.value).size(Math.round(size * 0.9)));
++  }
++  if (kind === "text") {
++    const two = graphemes(pick.value).length > 1;
++    const font = emojiFont(pick.value);
++    return box().bg(fill).text_color("#ffffff")
++      .when(Boolean(font), (el) => el.font_family(font).text_size(size * (two ? 0.5 : 0.68)))
++      .when(!font, (el) => el.font_bold().text_size(size * (two ? 0.46 : 0.58)))
++      .child(pick.value);
++  }
++  if (kind !== "letter" && icon) return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(icon).size(size));
++  return box().bg(fill).text_size(size * 0.58).font_bold().text_color("#ffffff").child(graphemes(name || "?")[0]?.toUpperCase() ?? "?");
++}
++
+ function find(node, id) {
+   if (node?.id === id) return node;
+   for (const child of node?.children ?? []) {
+@@ -83,8 +121,18 @@
      this.over = null;
      this.machines = [];
      this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
@@ -9,8 +61,34 @@ diff -ruN a/main.js b/main.js
 +    try { this.treesFolded = new Set(JSON.parse(localStorage.getItem("worktrees.folded") ?? "[]")); } catch (_) { this.treesFolded = new Set(); }
      this.refreshMachines(cx);
      cx.timer.every(15000, cx => this.refreshMachines(cx));
++    // `spaces-icons.rename` (shift-f2 in this layout): rename the shown space.
++    cx.spawn(async () => {
++      for (;;) {
++        const c = await nextCommand();
++        const s = spaces().find((p) => p.active);
++        if (c === "rename" && s) this.rename(s);
++      }
++    });
      // `git status` walks the whole tree, on another machine a process there:
-@@ -283,11 +285,17 @@
+     // only when its answer could have changed (see `due`).
+     cx.timer.every(250, (cx) => this.checkNew(cx));
+@@ -268,9 +316,14 @@
+ 
+   menu(w) {
+     // A popup is as tall as its items; height is only the most.
+-    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
++    openOverlay({ mod: "space-menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
+   }
+ 
++  // Name, icon and color in one dialog (mods/space-rename).
++  rename(w) {
++    openOverlay({ mod: "space-rename", kind: "dialog", width: 470, height: 610, props: { space: w.id, found: this.iconOf(w, panes()) } });
++  }
++
+   // Spaces in order, each worktree space moved under its main checkout's.
+   ordered() {
+     const sp = spaces(), ps = panes();
+@@ -283,11 +336,17 @@
      const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
      for (const r of list) {
        if (nested(r)) continue;
@@ -30,7 +108,7 @@ diff -ruN a/main.js b/main.js
      }
      return out;
    }
-@@ -355,7 +363,7 @@
+@@ -355,11 +414,12 @@
        .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
    }
  
@@ -39,16 +117,28 @@ diff -ruN a/main.js b/main.js
      const on = w.active;
      const colors = shared("space.colors") ?? {};
      const color = colors[w.id] ?? "ansi6";
-@@ -406,8 +414,39 @@
-           .when(!tree && Boolean(icon), el => el.child(div().size(18).flex_none().rounded(5).overflow_hidden().child(image(icon).size(18))))
-           .when(!tree && !icon, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill).items_center().justify_center().text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?")))
+     const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
++    const pick = (shared("space.icons") ?? {})[w.id] ?? null;
+     return v_flex()
+       .relative()
+       .id(`space-${w.id}`)
+@@ -402,14 +462,45 @@
+         h_flex()
+           .gap(9)
+           .items_center()
+-          .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
+-          .when(!tree && Boolean(icon), el => el.child(div().size(18).flex_none().rounded(5).overflow_hidden().child(image(icon).size(18))))
+-          .when(!tree && !icon, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill).items_center().justify_center().text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?")))
++          .when(Boolean(tree) && !pick, el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
++          .when(Boolean(tree) && Boolean(pick), el => el.pl(22).child(avatar(pick, icon, w.name, fill, 16)))
++          .when(!tree, el => el.child(avatar(pick, icon, w.name, fill)))
            .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
 -          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
 +          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
 +          .when(Boolean(kids?.length), (el) => el.child(this.treeToggle(g, kids, folded, t))),
        );
-+  }
-+
+   }
+ 
 +  // Show / hide a checkout's worktree spaces; only on a space that has some open. Folded, it
 +  // says how many, colored by the most urgent of them.
 +  treeToggle(g, kids, folded, t) {
@@ -77,6 +167,26 @@ diff -ruN a/main.js b/main.js
 +      })
 +      .when(folded, (el) => el.child(String(kids.length)))
 +      .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(11).flex_none());
-   }
- 
++  }
++
    compact({ w, i }, t) {
+     return h_flex()
+       .id(`space-${w.id}`)
+@@ -430,11 +521,14 @@
+     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+     const sp = spaces();
+     const ids = new Set(sp.map(p => p.id));
+-    const kept = Object.fromEntries(Object.entries(shared("space.colors") ?? {}).filter(([id]) => ids.has(id)));
+-    let changed = Object.keys(kept).length !== Object.keys(shared("space.colors") ?? {}).length;
++    // cyber-romo: colors of spaces not listed stay. Right after a start (or while a machine
++    // loads) the list is short, and dropping them lost every color chosen in space-rename.
++    // space-rename drops closed spaces' colors when it saves.
++    const kept = { ...(shared("space.colors") ?? {}) };
++    let changed = false;
+     for (const p of sp) {
+       if (kept[p.id] || p.name === "~") continue;
+-      const uses = c => Object.values(kept).filter(v => v === c).length;
++      const uses = c => sp.filter(q => kept[q.id] === c).length;
+       kept[p.id] = palette.reduce((best, c) => uses(c) < uses(best) ? c : best);
+       changed = true;
+     }
