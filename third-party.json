@@ -1,0 +1,55 @@
+{
+  "about": "Pieces of cyber-romo that are other people's work with no license declared, so this repo does not copy them. install.sh downloads each one from its author's GitHub repo at the pinned commit (codeload.github.com/<repo>/tar.gz/<commit>), takes <path> from it, applies <patch> (cyber-romo's changes, `patch -p1` inside the mod folder) when there is one, and installs it as <name>. export.sh regenerates each patch from the live setup. An agent can do the same by hand: see the README's 'Piezas de terceros' section.",
+  "items": [
+    {
+      "name": "file-editor",
+      "kind": "mod",
+      "repo": "werlang/herdr-file-editor",
+      "commit": "ab5bceb4d53f876637451de83a8469994c5fd8b0",
+      "path": "mods/file-editor",
+      "patch": null,
+      "license": "none declared",
+      "what": "File explorer and tabbed editor (the Files panel), v0.1.1, used unchanged"
+    },
+    {
+      "name": "spaces-icons",
+      "kind": "mod",
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "mods/spaces-icons",
+      "patch": "patches/spaces-icons.patch",
+      "license": "none declared",
+      "what": "Spaces with each project's avatar or icon; the patch adds worktrees under their repo and a button to fold them"
+    },
+    {
+      "name": "tabs-graph",
+      "kind": "mod",
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "mods/tabs-graph",
+      "patch": "patches/tabs-graph.patch",
+      "license": "none declared",
+      "what": "Pill tabs plus the Files / Changes / Graph buttons"
+    },
+    {
+      "name": "herdr-catppuccin",
+      "kind": "theme",
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "themes/herdr-catppuccin.json",
+      "patch": null,
+      "license": "none declared",
+      "what": "Dark theme (Catppuccin Mocha), used unchanged"
+    },
+    {
+      "name": "herdr-catppuccin-latte",
+      "kind": "theme",
+      "repo": "MarcozVD/herdr-layout-catppuccin",
+      "commit": "b58f43478fbf874c8be989b3336793f7c98b6d10",
+      "path": "themes/herdr-catppuccin-latte.json",
+      "patch": null,
+      "license": "none declared",
+      "what": "Light theme (Catppuccin Latte), used unchanged"
+    }
+  ]
+}

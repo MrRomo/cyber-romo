@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "MrRomo splash",
+  "overlay": { "kind": "dialog", "width": 1, "height": 1, "frame": "none", "modal": true }
+}

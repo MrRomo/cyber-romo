@@ -1,0 +1,82 @@
+diff -ruN a/main.js b/main.js
+--- a/main.js
++++ b/main.js
+@@ -83,6 +83,8 @@
+     this.over = null;
+     this.machines = [];
+     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
++    // Repos whose worktree spaces are folded under their main checkout (kept across reloads).
++    try { this.treesFolded = new Set(JSON.parse(localStorage.getItem("worktrees.folded") ?? "[]")); } catch (_) { this.treesFolded = new Set(); }
+     this.refreshMachines(cx);
+     cx.timer.every(15000, cx => this.refreshMachines(cx));
+     // `git status` walks the whole tree, on another machine a process there:
+@@ -283,11 +285,17 @@
+     const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
+     for (const r of list) {
+       if (nested(r)) continue;
+-      out.push({ ...r, tree: null });
++      const row = { ...r, tree: null };
++      out.push(row);
+       if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
+       placed.add(r.g.repo);
+       const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
+-      kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
++      if (!kids.length) continue;
++      // Folded, the shown worktree still shows: the selection never hides.
++      const folded = this.treesFolded.has(r.g.repo);
++      Object.assign(row, { kids, folded });
++      const shown = folded ? kids.filter((k) => k.w.active) : kids;
++      shown.forEach((k, n) => out.push({ ...k, tree: n === shown.length - 1 ? "└─" : "├─" }));
+     }
+     return out;
+   }
+@@ -355,7 +363,7 @@
+       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
+   }
+ 
+-  row({ w, i, g, tree, icon }, t) {
++  row({ w, i, g, tree, icon, kids, folded }, t) {
+     const on = w.active;
+     const colors = shared("space.colors") ?? {};
+     const color = colors[w.id] ?? "ansi6";
+@@ -406,8 +414,39 @@
+           .when(!tree && Boolean(icon), el => el.child(div().size(18).flex_none().rounded(5).overflow_hidden().child(image(icon).size(18))))
+           .when(!tree && !icon, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill).items_center().justify_center().text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?")))
+           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
+-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
++          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
++          .when(Boolean(kids?.length), (el) => el.child(this.treeToggle(g, kids, folded, t))),
+       );
++  }
++
++  // Show / hide a checkout's worktree spaces; only on a space that has some open. Folded, it
++  // says how many, colored by the most urgent of them.
++  treeToggle(g, kids, folded, t) {
++    const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
++    const top = kids.map((k) => k.w.status).reduce((m, s) => ((RANK[s] ?? 0) > (RANK[m] ?? 0) ? s : m), null);
++    return h_flex()
++      .id(`trees-${g.repo}`)
++      .flex_none()
++      .h(18)
++      .px(4)
++      .gap(3)
++      .rounded(5)
++      .items_center()
++      .text_size(10.5)
++      .text_color(folded && top && top !== "idle" ? tone(t, top) : t.dim)
++      .cursor_pointer()
++      .hover((s) => s.bg(t.hover).text_color(t.foreground))
++      .tooltip(folded ? `Show ${kids.length} worktree${kids.length === 1 ? "" : "s"}` : "Hide worktrees")
++      // The row selects and drags on press: keep this press to the button.
++      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
++      .on_click((_e, cx) => {
++        cx.stop_propagation();
++        this.treesFolded.has(g.repo) ? this.treesFolded.delete(g.repo) : this.treesFolded.add(g.repo);
++        try { localStorage.setItem("worktrees.folded", JSON.stringify([...this.treesFolded])); } catch (_) {}
++        cx.notify();
++      })
++      .when(folded, (el) => el.child(String(kids.length)))
++      .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(11).flex_none());
+   }
+ 
+   compact({ w, i }, t) {

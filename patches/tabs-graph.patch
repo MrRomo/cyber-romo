@@ -1,0 +1,21 @@
+diff -ruN a/main.js b/main.js
+--- a/main.js
++++ b/main.js
+@@ -1,6 +1,6 @@
+ import { View, div, svg, image } from "gpui-kit";
+ import { h_flex } from "gpui-base";
+-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, appHome } from "herdr";
++import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, appHome } from "herdr";
+ import * as fs from "fs/promises";
+ 
+ function find(node, id) {
+@@ -20,7 +20,8 @@
+     // (github.com/rabeeh-ta/herdr-git-graph): without it the panel would be empty.
+     this.hasGraph = false;
+     cx.spawn(async (cx) => {
+-      try { this.hasGraph = await fs.exists(`${appHome().split("\\").join("/")}/mods/git-graph/main.js`); } catch {}
++      const mods = `${appHome().split("\\").join("/")}/mods`;
++      try { this.hasGraph = await fs.exists(`${mods}/git-graph/main.js`); } catch {}
+       if (this.hasGraph) cx.notify();
+     });
+   }
