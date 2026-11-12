@@ -11,6 +11,22 @@ import { agents, terminals, panes, focused, spaces, machines, run, theme, shared
 // The program-table entry for rows of our own whose pane shows something else.
 // The expand/collapse toggle's slot: the 16 px button and 4 px to the icon.
 const SLOT = 20;
+// Where the tree's trunk runs: under the toggle's centre (row padding 8 + half of 16, less half the 1.5 px line).
+// The parent row draws a stem from the toggle's bottom edge (TOGGLE_BOTTOM) to its own bottom, and
+// the sub-agent rows continue it, so the lines grow straight out of the button.
+const TREE_X = 15.25;
+const TOGGLE_BOTTOM = 21; // the 12 px chevron's bottom in its 16 px box, so the trunk touches the glyph
+const STEP = 13; // one tree level: the 9 px elbow cell and its 4 px margin
+// Full-height verticals for a row's "├" and "│" cells, so each sibling's line touches the next one's.
+// Nothing overlaps: the line colour is translucent, so a doubled stretch would show brighter.
+const guides = (t, lines) => lines.flatMap((l, j) => (l === "├" || l === "│")
+  ? [div().absolute().left(TREE_X + STEP * j).top(0).bottom(0).w(1.5).bg(t.input)] : []);
+// One level's cell in the row's first line: the elbow "└" (its vertical is its own), or the stub
+// of a "├" (its vertical is the full-height guide). "│" and "" draw nothing here.
+const cell = (t, l) => div().self_start().h(13).flex_none()
+  .when(l === "└", el => el.w(9).mr(4).border_l(1.5).border_b(1.5).rounded_bl(6).border_color(t.input))
+  .when(l === "├", el => el.w(7.5).ml(1.5).mr(4).border_b(1.5).border_color(t.input))
+  .when(l !== "└" && l !== "├", el => el.w(9).mr(4));
 const CLAUDE = { key: "claude", name: "Claude Code", icon: "icons/claude.svg", tint: false, tile: null, color: null, shell: false, agent: true };
 // "vps/t7" -> ["vps", "t7"]; a bare address is this computer's (null).
 const split = (address) => {
@@ -403,7 +419,8 @@ export default class Agents extends View {
     const more = facts(c);
     return v_flex()
       .id(`csub-${parent.address}-${c.id}`)
-      .pl(39 + (this.indent ?? 0))
+      .relative()
+      .pl(TREE_X)
       .pr(8)
       .pb(more ? 4 : 0)
       .rounded(8)
@@ -411,12 +428,11 @@ export default class Agents extends View {
       .text_size(12.5)
       .hover((el) => el.bg(t.hover))
       .on_click(() => run("pane.focus", { pane: parent.pane }))
+      .children(guides(t, s.lines))
       .child(h_flex()
         .h(26)
         .items_center()
-        .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
-          .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
-          .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
+        .children(s.lines.map(l => cell(t, l)))
         .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
           .child(div().flex_none().max_w(130).truncate().text_color(t.muted).child(c.type))
@@ -521,8 +537,10 @@ export default class Agents extends View {
     const more = facts(this.claude?.[k.address]);
     const frame = (el) => el
       .id(`sub-${k.address}`)
-      .pl(39 + (this.indent ?? 0))
+      .relative()
+      .pl(TREE_X)
       .pr(8)
+      .children(guides(t, s.lines))
       .rounded(8)
       .flex_none()
       .text_size(12.5)
@@ -533,9 +551,7 @@ export default class Agents extends View {
       .h(26)
       .gap(0)
       .items_center()
-      .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
-        .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
-        .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
+      .children(s.lines.map(l => cell(t, l)))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
       .child(this.status(t, { status: st }, compact));
@@ -586,10 +602,9 @@ export default class Agents extends View {
     setAgentOrder(list.map((a) => a.address));
 
     // Each row's children, once. While any row has some, every row keeps the toggle's slot,
-    // so the icons line up; the sub-agent rows move over by as much (this.indent).
+    // so the icons line up. The sub-agent rows hang from the toggle (TREE_X), not from the icon.
     const kidsOf = new Map(list.map((a) => [a.address, collapsed ? [] : this.kids(all, a.address)]));
     const slot = [...kidsOf.values()].some((k) => k.length > 0);
-    this.indent = slot ? SLOT : 0;
     const withKids = (a, i) => {
       const subs = kidsOf.get(a.address) ?? [];
       const r = row(a, i, subs);
@@ -700,8 +715,12 @@ export default class Agents extends View {
       const second = facts(this.claude?.[a.address]);
       const frame = (el) => el
         .id(`ag-${a.address}`)
+        .relative()
         .px(8)
         .flex_none()
+        // The trunk's first piece: from the toggle's bottom edge down to the first sub-agent row.
+        .when(subs.length > 0 && !this.folded.has(a.address),
+          (el) => el.child(div().absolute().left(TREE_X).top(TOGGLE_BOTTOM).bottom(0).w(1.5).bg(t.input)))
         .rounded(8)
         .when(a.focused, (el) => el.bg(t.selected))
         .cursor_pointer()
