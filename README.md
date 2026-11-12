@@ -56,8 +56,16 @@ diálogo con el nombre, el ícono y el color:
 ![Panel derecho: a la izquierda Changes con el diff de dos archivos; a la derecha Graph con ramas, un merge y un tag](docs/panels.png)
 
 - Pestañas en píldoras y tres botones a la derecha: **Files** (explorador y editor con pestañas,
-  `file-editor`), **Changes** (los cambios sin commit, de Herdr) y **Graph** (grafo de git con
+  `file-editor`), **Changes** (panel git estilo Zed, `git-changes`) y **Graph** (grafo de git con
   acciones, `git-graph`).
+- **Changes** reemplaza al panel de Herdr: archivos con casillas para stage (en árbol o lista),
+  stashes, área de commit (commit, amend, commit & push), botón de remoto (pull / push / publish /
+  fetch), cambio de rama, y una pestaña **History** con el grafo de commits. Al hacer clic en un
+  archivo, stash o commit, su diff se abre en una pestaña del área principal, en una o dos
+  columnas.
+- **Convive con Graph**: `git-changes` no crea ramas ni hace merge, rebase, cherry-pick ni tags;
+  eso sigue en **Graph**. Comparten la señal `git-graph.changed`, así que una acción en uno
+  refresca al otro.
 
 ### Marca
 
@@ -81,6 +89,7 @@ Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-ap
 | `mods/space-rename` | Diálogo para renombrar un espacio y elegir su ícono y color | propio | sí |
 | `mods/space-menu` | Menú del clic derecho en un espacio; su Rename abre space-rename | propio (copia del `menu` de Herdr) | sí |
 | `mods/git-graph` | Grafo de git y acciones (panel Graph) | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT | sí (`licenses/git-graph-MIT.txt`) |
+| `mods/git-changes` | Panel Changes estilo Zed (stage, commit, stash, push/pull, History y diff en el área principal); reemplaza al `changes` de Herdr en el layout | [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes) `94bacef`, MIT (con partes Apache-2.0 e ISC) | sí (`licenses/git-changes/`) |
 | `file-editor` | Explorador y editor con pestañas (panel Files) | [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor) v0.1.1 | **no**: se descarga |
 | `spaces-icons` | Espacios con ícono, worktrees bajo su repo; el parche agrega el ícono elegido, el menú propio, `shift-f2` y conserva los colores al reiniciar | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) + `patches/spaces-icons.patch` | **no**: se descarga y se parcha |
 | `tabs-graph` | Pestañas en píldoras + Files / Changes / Graph | MarcozVD/herdr-layout-catppuccin + `patches/tabs-graph.patch` | **no**: se descarga y se parcha |
@@ -88,7 +97,7 @@ Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-ap
 | `config/keys.json`, `config/settings.json` | Teclas (cmd-shift-l cambia de layout, cmd-d divide, `shift-f2` renombra el espacio con ícono en este layout, …) y ajustes (zoom 1.2, Geist Mono, modo oscuro, sonidos) | propios | sí |
 
 También usa mods que **vienen con Herdr** y no se copian: `workspace-chrome` (pie de la barra
-lateral), `workspace-status`, `pane`, `changes`, `files`, `menu`, `new-menu`, `toast`,
+lateral), `workspace-status`, `pane`, `changes` (ya no se muestra, pero el botón Changes de `tabs-graph` usa su ícono), `files`, `menu`, `new-menu`, `toast`,
 `confirm`, `prompt`, `peek`, `help`, `worktree` y `machine-add`. Los íconos de programas y las
 fuentes Geist / Geist Mono / JetBrains Mono también vienen con Herdr.
 
@@ -206,5 +215,6 @@ Los espacios y pestañas abiertos, los colores de cada espacio, tamaños y clics
 - Layout, `spaces-icons`, `tabs-graph` y temas catppuccin: [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin).
 - `file-editor`: [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor).
 - `git-graph`: [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT (`licenses/git-graph-MIT.txt`); íconos según Lucide (ISC).
+- `git-changes`: [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes), MIT, de aBER; parte del código viene de herdr-git-graph (MIT), del panel Changes de Herdr (Apache-2.0) y de íconos Lucide (ISC). Licencias y aviso en `licenses/git-changes/`. Ejecuta solo `git` en el repo del terminal enfocado (en la máquina del espacio, si es remota); la red solo la usa git al hacer fetch, pull o push.
 - Orbitron: The League of Moveable Type, SIL Open Font License 1.1 (`mods/brand-title/fonts/LICENSE-Orbitron.txt`).
 - Herdr y sus mods de base: [herdr.dev](https://herdr.dev).

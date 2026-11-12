@@ -1,0 +1,21 @@
+Git Changes for Herdr
+Copyright (c) 2026 aBER
+
+This software is MIT-licensed (see LICENSE). Parts of it come from other
+projects under their own licenses:
+
+- mods/git-changes/lanes.js, and the parts of history.js, git.js and menu.js
+  marked at their tops, are from herdr-git-graph
+  (https://github.com/rabeeh-ta/herdr-git-graph), MIT License,
+  Copyright (c) 2026 Rabeeh T A. See LICENSES/MIT-herdr-git-graph.txt.
+- The parts of panel.js, diff.js and git.js marked at their tops started as a
+  clone of the Changes mod shipped with Herdr (https://herdr.dev), Apache
+  License 2.0. See LICENSES/Apache-2.0.txt.
+- mods/git-changes/icons are Lucide icons (https://lucide.dev), ISC License.
+  See LICENSES/ISC-Lucide.txt.
+
+Ideas, no code:
+- better-changes by Tawsif Aqib (https://github.com/munza/herdr-mods),
+  Apache License 2.0: the diff in one reusable tab of the main area, the
+  Tree/Flat and One/Two-column icon pairs, and two columns paired by position.
+- Zed's git panel (https://zed.dev): the panel's layout.
