@@ -92,7 +92,9 @@ export class DiffView {
 
   // Record this tab's id the first time it's seen, so the panel reuses it:
   // the tab in this space holding a git-changes pane, the shown one first.
-  claim() {
+  // cyber-romo: right after tab.new, spaces() and panes() don't list the new tab yet, so a
+  // single try missed it and the next pick opened a second tab: try again every 150 ms, up to 3 s.
+  claim(cx, tries = 0) {
     const e = this.entry();
     if (!e || e.tab) return;
     const space = spaces().find((s) => s.id === this.space);
@@ -101,6 +103,7 @@ export class DiffView {
     const mine = panes().filter((p) => p.mod === "git-changes" && tabs.has(p.tab));
     const tab = (mine.find((p) => tabs.get(p.tab).active) ?? mine[0])?.tab;
     if (tab) setShared("git-changes.view", { ...(shared("git-changes.view") ?? {}), [this.space]: { ...e, tab, opening: null } });
+    else if (tries < 20) cx.timer.after(150, (cx) => this.claim(cx, tries + 1));
   }
 
   sync(cx) {
@@ -109,7 +112,7 @@ export class DiffView {
     if (id === this.seen) return;
     this.seen = id;
     if (!e) { this.item = null; this.rows = []; this.pairs = null; return; }
-    if (!e.tab) cx.spawn(async () => this.claim());
+    if (!e.tab) cx.spawn(async (cx) => this.claim(cx));
     this.item = e.item; this.root = e.source.root; this.on = e.source.on ?? null;
     this.rows = []; this.pairs = null; this.offset = 0; this.error = null;
     if (this.root !== this.watched && !this.on) this.watch(this.root, cx);

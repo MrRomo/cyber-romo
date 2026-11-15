@@ -1,6 +1,7 @@
 import { exec, notify, setShared, openOverlay, run } from "herdr";
 import { dialogFor, dialogHeight, doneText } from "./git.js";
 import { executeAction } from "./execute.js";
+import { gitPanel } from "./fused.js";
 
 // Runs an action's git commands in order, stopping at the first failure. Every
 // graph copy refreshes after, whether or not its folder watch saw the change.
@@ -33,6 +34,8 @@ export function openDialog(action, ctx) {
 }
 
 export function showChanges() {
-  run("layout.select", { stack: "panel-body", child: "changes" });
+  // cyber-romo: the stack that holds git-changes beside this graph (fused.js), wherever the layout puts it.
+  const pair = gitPanel();
+  run("layout.select", pair ? { stack: pair.stack, child: pair.changes } : { stack: "panel-body", child: "changes" });
   run("layout.show", { id: "panel" });
 }

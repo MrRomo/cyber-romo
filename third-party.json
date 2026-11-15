@@ -33,7 +33,7 @@
       "path": "mods/tabs-graph",
       "patch": "patches/tabs-graph.patch",
       "license": "none declared",
-      "what": "Pill tabs plus the Files / Changes / Graph buttons"
+      "what": "Pill tabs plus the Files / Changes / Graph buttons; the patch hides Graph when git-changes and git-graph share the panel's stack (Changes, with git-graph as its History tab, stands for both)"
     },
     {
       "name": "herdr-catppuccin",

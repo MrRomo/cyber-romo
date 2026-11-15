@@ -12,13 +12,17 @@
 // Changes panel (Apache-2.0): location(), the folder watch and the context-keyed
 // refresh are still its. Listens to herdr-git-graph's "git-graph.changed" so
 // both panels refresh after either acts.
+//
+// cyber-romo: the History tab is the git-graph mod (graph, Manygit, Pull, Fetch),
+// in the same layout stack as this panel; the tab switches the stack to it
+// (fused.js). The graph this mod drew (history.js, lanes.js) is gone.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { spaces, panes, focused, exec, watchFolder, theme, settings, notify, shared, setShared, openOverlay, run, props } from "herdr";
 import * as G from "./git.js";
 import { icon, menuHeight } from "./menu.js";
 import { showInTab, shownIn, shownSource, getLayout, setLayout } from "./diff.js";
-import { History } from "./history.js";
+import { gitPanel, showTab, tabStrip } from "./fused.js";
 
 // The focused terminal's folder, or `props.folder` when opened as a pane on one repository.
 function location() {
@@ -43,11 +47,9 @@ export class Panel {
   init(cx) {
     this.uid = `gc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     this.entries = []; this.stashes = []; this.remotes = []; this.last = null;
-    this.history = new History(); this.panelWidth = 400;
     this.branch = null;
     this.listMode = localStorage.getItem("list") === "flat" ? "flat" : "tree";
     this.folded = new Set(JSON.parse(localStorage.getItem("folded") ?? "[]"));
-    this.tab = props()?.tab ?? localStorage.getItem("tab") ?? "changes";
     this.collapsed = JSON.parse(localStorage.getItem("collapsed") ?? "{}");
     this.signoff = localStorage.getItem("signoff") === "1";
     this.message = ""; this.menuActions = {}; this.menuSerial = 0;
@@ -84,7 +86,7 @@ export class Panel {
 
   reset() {
     this.menuActions = {}; this.armed = null;
-    this.root = null; this.branch = null; this.entries = []; this.stashes = []; this.last = null; this.history.clear();
+    this.root = null; this.branch = null; this.entries = []; this.stashes = []; this.last = null;
     this.limited = false;
   }
 
@@ -111,9 +113,6 @@ export class Panel {
           hasHead ? git(["diff", "HEAD", ...G.NUMSTAT]).then((r) => [r]) : Promise.all([git(["diff", "--cached", ...G.NUMSTAT]), git(["diff", ...G.NUMSTAT])]),
           git(G.STASHES), git(["remote"]),
           hasHead ? git(G.historyArgs({ all: false, limit: 1 })) : null]);
-        if (key() !== context) return;
-        // The graph is read only while it shows; switching to it reads it.
-        if (this.tab === "history") await this.history.read(git, { changes: s.entries.length, head: s.branch.oid, upstream: s.branch.upstream });
         if (key() !== context) return;
         const numstat = G.parseNumstat(...stats.filter((r) => r.code === 0).map((r) => r.stdout));
         this.entries = s.entries.slice(0, G.LIMIT).map((e) => ({ ...e, area: "file", add: 0, del: 0, ...(numstat[e.path] ?? {}) }));
@@ -145,11 +144,8 @@ export class Panel {
     cx.notify();
   }
 
-  setTab(tab, cx) {
-    if (this.tab === tab) return;
-    this.tab = tab; localStorage.setItem("tab", tab);
-    this.refresh(cx); cx.notify();
-  }
+  // History is git-graph's block, in the same stack: the tab shows it.
+  showHistory() { showTab(gitPanel(), "history"); }
 
   // --- acting -----------------------------------------------------------------
 
@@ -512,19 +508,6 @@ export class Panel {
         .child(this.iconButton(`drop-${s.ref}`, "trash", "Drop", (cx) => this.arm(`drop-${s.ref}`, cx, () => this.act(cx, "Drop stash", G.stashArgs("drop", s.ref))), t, { danger: true })));
   }
 
-  // A row of the graph picked: the uncommitted row shows every change.
-  pickCommit(c, _clicks, cx) { this.pick(c.uncommitted ? { area: "all" } : c, cx); }
-
-  historyView(t) {
-    return this.history.view(t, {
-      selected: ((s) => (s?.area === "all" ? G.UNCOMMITTED : s?.area === "commit" ? s.hash : null))(this.shown()),
-      panelWidth: this.panelWidth, loading: this.loading,
-      onPick: (c, clicks, cx) => this.pickCommit(c, clicks, cx),
-      onMenu: (c, cx) => (c.uncommitted ? this.optionsMenu(cx) : this.commitMenu(c, cx)),
-      onMore: (cx) => { this.history.more(); this.refresh(cx); cx.notify(); },
-    });
-  }
-
   changesList(t) {
     const out = [], conflicts = [], tracked = [], untracked = [];
     for (const e of this.entries) (e.conflict ? conflicts : e.untracked ? untracked : tracked).push(e);
@@ -543,31 +526,13 @@ export class Panel {
     return { out };
   }
 
-  tabs(t) {
-    const tab = (id, label) => div().id(`tab-${id}`).flex_1().h_full().flex().items_center().justify_center().cursor_pointer().text_size(13)
-      .text_color(this.tab === id ? t.foreground : t.muted).when(this.tab === id, (e) => e.border_b(2).border_color(t.accent)).hover((s) => s.text_color(t.foreground))
-      .on_click((_e, cx) => this.setTab(id, cx)).child(label);
-    return h_flex().h(34).flex_none().border_b(1).border_color(t.border)
-      .child(tab("changes", this.entries.length ? `Changes (${this.entries.length})` : "Changes"))
-      .child(tab("history", "History"));
+  tabs(t, pair) {
+    return tabStrip(t, { tab: "changes", changes: this.entries.length, history: Boolean(pair), onPick: () => showTab(pair, "history") });
   }
 
   toolbar(t) {
     const busy = Boolean(this.busy), any = this.entries.length > 0, allStaged = any && this.entries.every((e) => e.staged === "all");
     const add = this.entries.reduce((n, e) => n + e.add, 0), del = this.entries.reduce((n, e) => n + e.del, 0);
-    if (this.tab === "history") {
-      const h = this.history, n = h.base.length;
-      const segment = (id, text, on, all) => div().id(id).h(20).px(8).flex().items_center().rounded(5).text_size(11.5).cursor_pointer()
-        .text_color(on ? t.foreground : t.muted).when(on, (e) => e.bg(t.raised).border_1().border_color(t.border))
-        .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { if (!on) { h.setAll(all); this.refresh(cx); cx.notify(); } }).child(text);
-      return h_flex().h(32).flex_none().px(8).gap(6).items_center().border_b(1).border_color(t.border)
-        .child(h_flex().p(2).gap(2).rounded(7).border_1().border_color(t.border)
-          .child(segment("history-all", "All branches", h.all, true)).child(segment("history-current", "Current", !h.all, false)))
-        .child(this.iconButton("history-remotes", "cloud", h.remotes ? "Showing every remote branch: click to show only the upstream" : "Showing only the upstream: click to show every remote branch",
-          (cx) => { h.setRemotes(!h.remotes); this.refresh(cx); cx.notify(); }, t, { active: h.remotes, disabled: !h.all }))
-        .child(div().flex_1().text_right().text_size(11).text_color(t.dim).child(n ? `${n}${h.hasMore ? "+" : ""}` : ""))
-        .child(this.iconButton("refresh-h", "refresh", "Refresh", (cx) => this.refresh(cx), t, { disabled: busy }));
-    }
     return h_flex().h(32).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
       .child(this.iconButton("view-diff", "diff", "Show every change in the main area", (cx) => this.pick({ area: "all" }, cx), t, { label: "View Diff", disabled: !any }))
       .when(any, (e) => e.child(div().pl(4).text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
@@ -640,7 +605,7 @@ export class Panel {
       .child(c.short)
       .child(svg(icon(done ? "check" : "copy")).size(11).flex_none());
   }
-  lastCommit(t) {
+  lastCommit(t, pair) {
     const c = this.last;
     return h_flex().id("last-commit").h(30).flex_none().px(10).gap(6).items_center().border_t(1).border_color(t.border).text_size(12).cursor_pointer()
       .hover((s) => s.bg(t.hover)).tooltip(`${c.short} · ${c.author} · ${c.when}`)
@@ -649,7 +614,7 @@ export class Panel {
       .child(this.hashChip(c, t))
       .child(div().flex_1().min_w(0).truncate().text_color(this.isShown(c) ? t.accent : t.muted).child(c.subject))
       .child(this.iconButton("uncommit", "undo", "Uncommit (keep the changes staged)", (cx) => this.arm("uncommit", cx, () => this.uncommit(cx)), t, { disabled: Boolean(this.busy) }))
-      .child(this.iconButton("history", "history", "History", (cx) => this.setTab("history", cx), t));
+      .when(Boolean(pair), (e) => e.child(this.iconButton("history", "history", "History", () => this.showHistory(), t)));
   }
 
   render(cx) {
@@ -657,35 +622,26 @@ export class Panel {
     const changed = shared("git-graph.changed");
     if (changed !== this.seenChange) { this.seenChange = changed; if (!this.busy) this.refresh(cx); }
     this.takePick(cx);
-    const t = theme();
-    const history = this.tab === "history" && Boolean(this.root);
-    const list = !history && this.root ? this.changesList(t).out : [];
-    const graph = history && (this.history.commits.length
-      ? this.historyView(t)
-      : div().flex_1().p(12).text_color(t.dim).child(this.hasHead ? "Loading history…" : "No commits yet"));
+    const t = theme(), pair = gitPanel();
+    const list = this.root ? this.changesList(t).out : [];
     return v_flex().id("git-changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
-      .on_size_change((size, cx) => {
-        const width = Math.round(size.width / (settings().zoom ?? 1));
-        if (width !== this.panelWidth) { this.panelWidth = width; cx.notify(); }
-      })
       .on_key_down((e, cx) => {
         if (e.keystroke === "cmd-enter" || e.keystroke === "ctrl-enter") { this.commit(cx, false); cx.stop_propagation(); }
         // ⌘C on the panel (not while typing) copies the selected commit's hash.
         else if ((e.keystroke === "cmd-c" || e.keystroke === "ctrl-shift-c") && !this.typing && this.shown()?.area === "commit") { this.copyHash(this.shown(), cx); cx.stop_propagation(); }
         else if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
-      .child(this.tabs(t))
+      .child(this.tabs(t, pair))
       .when(Boolean(this.root), (e) => e.child(this.toolbar(t)))
-      .when(history, (e) => e.child(v_flex().flex_1().min_h(0).child(graph)))
-      .when(!history, (e) => e.child(v_flex().id("git-changes-list").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+      .child(v_flex().id("git-changes-list").flex_1().min_h(0).overflow_y_scrollbar().p(6)
         .children(list)
-        .when(!this.root, (el) => el.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : "No folder"))))))
+        .when(!this.root, (el) => el.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : "No folder")))))
       .when(this.limited, (e) => e.child(div().px(12).py(4).text_size(11).text_color(t.dim).child(`Showing the first ${G.LIMIT.toLocaleString()} files`)))
       .when(Boolean(this.note), (e) => e.child(div().id("note").px(10).py(6).flex_none().border_t(1).border_color(t.border).text_size(11).text_color(t.ansi1).cursor_pointer().tooltip("Click to dismiss")
         .on_click((_e, cx) => { this.note = null; cx.notify(); }).child(this.note)))
       .when(Boolean(this.root && this.branch), (e) => e.child(v_flex().flex_none().border_t(1).border_color(t.border).bg(t.chrome)
         .child(this.branchRow(t))
         .child(this.footer(t))
-        .when(Boolean(this.last), (e) => e.child(this.lastCommit(t)))));
+        .when(Boolean(this.last), (e) => e.child(this.lastCommit(t, pair)))));
   }
 }

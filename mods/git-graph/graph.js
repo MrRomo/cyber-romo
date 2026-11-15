@@ -3,14 +3,30 @@
 // a pane. Labels take double-clicks (checkout) and right-clicks (menus).
 import { div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, panes, focused, exec, watchFolder, readTextFile, theme, settings, props, shared, setShared, openOverlay, home, notify, knownAgents, updates } from "herdr";
+import { spaces, panes, focused, layout, exec, watchFolder, readTextFile, theme, settings, props, shared, setShared, openOverlay, home, notify, knownAgents, updates } from "herdr";
 import { layoutLanes } from "./lanes.js";
 import { READ, STATUS, UNCOMMITTED, LABEL, logArgs, parseLog, parseStatus, withUncommitted, labelsOf, hitLabel,
   menuFor, menuHeight, fileArgs, joinFiles, diffArgs, diffRows } from "./git.js";
 import { perform, openDialog, showChanges } from "./act.js";
 import { icon } from "./menu.js";
 import { available, check, openUpdate, newer } from "./update.js";
-import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, REMOTES, PULL, AUTOFETCH, autofetchOn, fetchRemote, fetchOrder, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
+import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, REMOTES, FETCH, PULL, autofetchOn, autofetchDue, fetchKey, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
+// cyber-romo: the History tab of the Changes panel (see fused.js).
+import { gitPanel, showTab, tabStrip, openDiff, TABS_H } from "./fused.js";
+
+// The frame the shown tab's panes are drawn in, so the panel beside them takes the
+// same corner radius; Herdr's own pane mod walks the same one (mods/pane/main.js).
+function paneFrame(node) {
+  if (!node || node.hidden) return null;
+  if (node.content?.tab) return node.content.pane ?? null;
+  let children = node.children ?? [];
+  if (node.type === "stack") {
+    const visible = children.filter((child) => !child.hidden);
+    children = [visible.find((child) => child.id === node.active) ?? visible[0]];
+  }
+  for (const child of children) { const frame = paneFrame(child); if (frame) return frame; }
+  return null;
+}
 
 function location(folder) {
   if (folder) return { cwd: folder, on: null };
@@ -121,23 +137,15 @@ async function pool(items, limit, fn) {
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => { while (next < items.length) await fn(items[next++]); }));
 }
-// Every remote, origin first, each on its own: one that fails doesn't stop the
-// rest. The result is origin's (or the first remote's): that's what a row shows.
-async function fetchRemotes(path, on) {
-  const list = await exec("git", [...READ, "remote"], { cwd: path, on });
-  if (list.code !== 0) return { ok: false, error: (list.stderr || "git remote failed").trim().split("\n").pop() };
-  let first = null;
-  for (const name of fetchOrder(list.stdout.split("\n"))) {
-    const out = await exec("env", fetchRemote(name), { cwd: path, on }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
-    first ??= out;
-  }
-  if (!first || first.code === 0) return { ok: true };
-  return { ok: false, error: (first.stderr || "git fetch failed").trim().split("\n").pop() };
+// One repository's plain `git fetch` (what its branch tracks), with prompts off.
+// A row shows git's last line when it fails; Herdr's 30 s limit counts as a failure.
+async function fetchRepo(path, on) {
+  const out = await exec("env", FETCH, { cwd: path, on }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
+  return out.code === 0 ? { ok: true } : { ok: false, error: (out.stderr || "git fetch failed").trim().split("\n").pop() };
 }
 
-// When each repository last fetched in the background, shared so the panel and
-// pane copies don't fetch the same one twice. Day-old entries are dropped.
-const fetchKey = (path, on) => `${on ?? ""}\0${path}`;
+// When each repository last fetched in the background (tried, even if it failed),
+// shared so the panel and pane copies don't fetch the same one twice. Day-old entries are dropped.
 const lastFetched = () => shared("git-graph.fetchedAt") ?? {};
 function markFetched(keys) {
   const now = Date.now(), kept = Object.entries(lastFetched()).filter(([, at]) => now - at < 86400000);
@@ -162,6 +170,8 @@ export class Graph {
     this.seen = new Map(); this.commitDetails = new Map();
     // Fetch all: its progress for one Manygit folder, and each repository's last failure.
     this.fetchAll = null; this.fetchErrors = new Map();
+    // Background fetch: how many times in a row each repository's fetch failed (see autofetchWait).
+    this.fetchFailures = new Map();
     // Pull all: the same, for fast-forward pulls.
     this.pullAll = null; this.pullErrors = new Map(); this.seenPullAll = shared("git-graph.pullAll")?.at ?? null;
     // Manygit's .git watchers, one per repository, kept while it's listed (see watchRepos).
@@ -332,12 +342,15 @@ export class Graph {
   // background" is ticked): the repository the graph shows and the Manygit list's,
   // each at most every AUTOFETCH (whichever copy gets there first). Quiet: a
   // failure toasts nothing and marks no row, a success clears its row's mark.
+  // One that failed waits twice as long for each failure in a row (autofetchWait),
+  // until a fetch works, one is pressed (Fetch, Fetch all) or the setting is ticked again.
   autofetch(cx) {
-    if (this.autofetching || !backgroundFetch()) return;
+    if (!backgroundFetch()) { this.fetchFailures.clear(); return; }
+    if (this.autofetching) return;
     const on = this.on, ws = this.workspace, now = Date.now(), last = lastFetched();
     const paths = new Set(ws && !this.syncing(ws.root) ? ws.repos.filter((r) => fetchable(this.statuses.get(r.path))).map((r) => r.path) : []);
     if (this.root && this.remoteNames?.length) paths.add(this.root);
-    const due = [...paths].filter((p) => now - (last[fetchKey(p, on)] ?? 0) >= AUTOFETCH);
+    const due = [...paths].filter((p) => autofetchDue(last[fetchKey(p, on)], this.fetchFailures.get(fetchKey(p, on)), now));
     if (!due.length) return;
     markFetched(due.map((p) => fetchKey(p, on))); // before fetching, so the other copies don't
     this.autofetching = true;
@@ -345,7 +358,9 @@ export class Graph {
     cx.spawn(async (cx) => {
       try {
         await pool(due, 4, async (path) => {
-          const out = await fetchRemotes(path, on).catch(() => ({ ok: false }));
+          const out = await fetchRepo(path, on), key = fetchKey(path, on);
+          if (out.ok) this.fetchFailures.delete(key);
+          else this.fetchFailures.set(key, (this.fetchFailures.get(key) ?? 0) + 1);
           if (out.ok && this.fetchErrors.delete(path)) cx.notify();
           if (this.workspace && this.workspace.root === root) await this.readStatus(path, on, () => this.workspace?.root !== root, cx);
           // A remote machine's graph isn't watched: read it again.
@@ -357,7 +372,6 @@ export class Graph {
 
   // Manygit's fetch: every repository with a remote, 8 at a time, each row
   // updated as its fetch ends. It goes on in the background if you open a repository.
-  // Every remote is fetched, origin first; a row shows origin's failure.
   fetchEvery(cx) {
     const ws = this.workspace;
     if (!ws || this.syncing(ws.root)) return;
@@ -366,8 +380,8 @@ export class Graph {
     const stale = () => this.workspace?.root !== run.root;
     cx.spawn(async (cx) => {
       await pool(repos, 8, async (r) => {
-        const out = await fetchRemotes(r.path, on).catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
-        if (out.ok) { this.fetchErrors.delete(r.path); markFetched([fetchKey(r.path, on)]); }
+        const out = await fetchRepo(r.path, on);
+        if (out.ok) { this.fetchErrors.delete(r.path); this.fetchFailures.delete(fetchKey(r.path, on)); markFetched([fetchKey(r.path, on)]); }
         else { run.failed++; this.fetchErrors.set(r.path, out.error || "git fetch failed"); }
         run.done++;
         await this.readStatus(r.path, on, stale, cx);
@@ -524,6 +538,7 @@ export class Graph {
     if (this.fetching || !this.ctx) return;
     this.fetching = true;
     const ctx = this.ctx;
+    this.fetchFailures.delete(fetchKey(ctx.root, ctx.on)); // a fetch pressed by hand ends the background wait
     cx.spawn(async (cx) => {
       await perform({ type: "fetch" }, {}, ctx).catch(() => {});
       this.fetching = false; this.refresh(cx); cx.notify();
@@ -569,7 +584,7 @@ export class Graph {
 
   // The details strip's height (it holds the diff too): a dragged height, else what the list leaves.
   clampDetail(h) {
-    const room = Math.max(DETAIL_MIN, (this.height ?? 900) - CHROME_H - DETAIL_ROWS * this.rowH());
+    const room = Math.max(DETAIL_MIN, (this.height ?? 900) - this.chromeH() - DETAIL_ROWS * this.rowH());
     return Math.round(Math.max(DETAIL_MIN, Math.min(room, h)));
   }
   detailHeight() {
@@ -577,8 +592,10 @@ export class Graph {
     // The room the history leaves: a short history hands it all to the strip, a long one keeps 320
     // and a short pane gets whatever fits rather than clipping the list.
     const rows = (this.commits.length + (this.hasMore ? 1 : 0)) * this.rowH();
-    return this.clampDetail(Math.max(DETAIL_DEFAULT, (this.height ?? 900) - CHROME_H - rows));
+    return this.clampDetail(Math.max(DETAIL_DEFAULT, (this.height ?? 900) - this.chromeH() - rows));
   }
+  // Above the list: CHROME_H, and the Changes | History strip when the graph is that tab.
+  chromeH() { return CHROME_H + (this.pair ? TABS_H : 0); }
   startDetailDrag(e, cx) {
     cx.stop_propagation();
     if (e.click_count >= 2) { this.detail = 0; this.seenDetail = 0; setShared("git-graph.details", 0); cx.notify(); return; }
@@ -612,9 +629,19 @@ export class Graph {
     if (press?.count >= 2) {
       const hit = hitLabel(this.labels.get(key), press.x, this.graphWidth(), this.labelLimit());
       if (hit) this.checkout(hit.part, cx);
+      else this.viewDiff(commit);
       return;
     }
     this.pick(commit, cx);
+  }
+
+  // cyber-romo: as the Changes panel's History, a commit (or the uncommitted row) opens
+  // in git-changes' diff tab in the main area, one or two columns.
+  viewDiff(commit) {
+    if (!this.pair || !this.root) return;
+    openDiff(commit.uncommitted ? { area: "all" }
+      : { area: "commit", hash: commit.hash, short: commit.hash.slice(0, 7), subject: commit.subject, author: commit.author, when: ago(commit.time) },
+      { root: this.root, on: this.on ?? null });
   }
 
   checkout(part, cx) {
@@ -756,7 +783,7 @@ export class Graph {
   iconButton(id, glyph, tip, active, action, t) {
     return h_flex().id(id).h(24).px(6).gap(5).flex_none().items_center().rounded(6).text_size(11.5).cursor_pointer()
       .text_color(active ? t.foreground : t.muted).when(active, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action)
+      .on_mouse_down("left", (e, cx) => { this.pressedAt = e.position; cx.stop_propagation(); }).on_click(action)
       .child(svg(icon(glyph)).size(13).flex_none()).when(Boolean(tip), (e) => e.child(tip));
   }
 
@@ -785,9 +812,9 @@ export class Graph {
       .when(Boolean(available()), (e) => e.child(h_flex().id("graph-update").h(24).px(7).gap(5).flex_none().items_center().rounded(6).text_size(11.5)
         .cursor_pointer().text_color(t.accent).hover((s) => s.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click(() => openUpdate()).child(div().size(6).rounded(3).bg(t.accent)).child("Update Graph")))
-      // Pull, for the checked-out branch. Fetch beside it only while the background fetch is off.
+      // Pull, for the checked-out branch, beside Fetch (fetching right now stays one click away).
       .when(ready && this.remoteNames?.length > 0 && Boolean(this.current), (e) => e.child(this.iconButton("graph-pull", "pull", "Pull", false, (_e, cx) => this.pull(cx), t)))
-      .when(ready && this.remoteNames?.length > 0 && !backgroundFetch(), (e) => e.child(this.iconButton("graph-fetch", "fetch", this.fetching ? "Fetching…" : null, false, (_e, cx) => this.fetch(cx), t)))
+      .when(ready && this.remoteNames?.length > 0, (e) => e.child(this.iconButton("graph-fetch", "fetch", this.fetching ? "Fetching…" : null, false, (_e, cx) => this.fetch(cx), t)))
       .when(this.state === "workspace", (e) => {
         const fetching = this.fetchAll?.root === ws.root ? this.fetchAll : null, pulling = this.pullAll?.root === ws.root ? this.pullAll : null;
         return e.child(this.iconButton("graph-fetch-all", "fetch", fetching ? `Fetching ${fetching.done}/${fetching.total}…` : "Fetch all", Boolean(fetching), (_e, cx) => this.fetchEvery(cx), t))
@@ -797,8 +824,13 @@ export class Graph {
       .when(settingsShown, (e) => e.child(this.iconButton("graph-settings", "settings", null, false, () => this.openSettings(), t)));
   }
 
+  // A repository's graph gets only "Fetch in the background": Scan depth and Show tags are Manygit's.
   openSettings() {
-    openOverlay({ mod: "git-graph", kind: "popup", at: "pointer", width: 240, height: 130, props: { role: "settings" } });
+    const graph = this.state === "ready" || this.state === "empty", width = 240;
+    // Under the gear, right-aligned with it, so the popup doesn't cover the header (at the pointer it would).
+    // Pointer and popup positions are in window units, and the popup is `width` times the zoom wide there.
+    const z = this.unit(), p = this.pressedAt, at = p ? { x: Math.max(0, p.x - (width - 12) * z), y: p.y + 28 * z } : "pointer";
+    openOverlay({ mod: "git-graph", kind: "popup", at, width, height: graph ? 52 : 130, props: { role: "settings", scope: graph ? "graph" : "manygit" } });
   }
 
   // Manygit's repository pane: grouped by folder, each row its branch, uncommitted
@@ -953,6 +985,8 @@ export class Graph {
     const pane = (content) => v_flex().flex_none().h(this.detailHeight())
       .child(grip)
       .child(top.child(div().flex_1().text_color(t.muted).child(title))
+        .when(Boolean(this.pair), (e) => e.child(div().id("graph-view-diff").px(6).py(1).rounded(4).text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover))
+          .tooltip("Show the whole diff in the main area · double-click a row").on_click(() => this.viewDiff(commit)).child("View Diff")))
         .when(Boolean(commit.uncommitted), (e) => e.child(div().id("graph-open-changes").px(6).py(1).rounded(4).text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover))
           .on_click(() => showChanges()).child("Open Changes")))
         .child(close))
@@ -1034,7 +1068,9 @@ export class Graph {
     const setting = `${depthSetting()} ${tagsShown()}`;
     if (setting !== this.seenSetting) { const first = this.seenSetting === undefined; this.seenSetting = setting; if (!first && !this.opened) this.refresh(cx); }
     const t = theme(), mono = settings().font_family ?? "JetBrains Mono", ready = this.state === "ready";
-    return v_flex().id("git-graph").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+    // In the panel beside git-changes (not opened as a pane on a folder), the graph is its History tab.
+    this.pair = this.folder ? null : gitPanel();
+    return v_flex().id("git-graph").size_full().min_h(0).rounded(paneFrame(layout())?.radius ?? 0).overflow_hidden().bg(t.background).border_1().border_color(t.border)
       .text_color(t.foreground).text_size(12.5).track_focus(this.handle)
       .on_mouse_move((e, cx) => this.moveDrag(e, cx))
       .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
@@ -1053,6 +1089,7 @@ export class Graph {
         this.height = height;
         if (wide !== this.wide || graphMax !== this.graphMax || resized) { this.wide = wide; this.graphMax = graphMax; cx.notify(); }
       })
+      .when(Boolean(this.pair), (e) => e.child(tabStrip(t, { tab: "history", changes: this.root ? this.files.length : 0, onPick: (tab) => showTab(this.pair, tab) })))
       .child(this.header(t))
       .when(this.state === "workspace", (e) => e.child(this.workspaceList(t)))
       .when(Boolean(this.picking && this.workspace && this.opened), (e) => e.child(this.picker(t)))

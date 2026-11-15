@@ -14,8 +14,8 @@ MODS=(
   brand-splash    # own: the MrRomo splash brand-chrome opens
   space-rename    # own: rename a space and choose its icon (auto, letter, text/emoji, Herdr's icons, a picture) and color
   space-menu      # own (copy of Herdr's menu): a space's right-click menu whose Rename opens space-rename
-  git-graph       # third-party, MIT: github.com/rabeeh-ta/herdr-git-graph (licenses/git-graph-MIT.txt)
-  git-changes     # third-party, MIT (+ Apache-2.0, ISC parts): github.com/aBER0724/herdr-git-changes (licenses/git-changes/); the Changes panel, coexists with git-graph
+  git-graph       # third-party, MIT: github.com/rabeeh-ta/herdr-git-graph + PR #15 (licenses/git-graph-MIT.txt); the Changes panel's History tab (fused.js)
+  git-changes     # third-party, MIT (+ Apache-2.0, ISC parts): github.com/aBER0724/herdr-git-changes (licenses/git-changes/); the Changes panel, its History is git-graph
 )
 
 # Third-party mods and themes with no license (file-editor, spaces-icons, tabs-graph, the

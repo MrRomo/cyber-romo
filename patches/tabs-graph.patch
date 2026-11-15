@@ -1,15 +1,32 @@
 diff -ruN a/main.js b/main.js
 --- a/main.js
 +++ b/main.js
-@@ -1,6 +1,6 @@
+@@ -1,8 +1,17 @@
  import { View, div, svg, image } from "gpui-kit";
  import { h_flex } from "gpui-base";
 -import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, appHome } from "herdr";
 +import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, appHome } from "herdr";
  import * as fs from "fs/promises";
  
++// cyber-romo: when the panel's stack holds git-changes and git-graph, they are one
++// panel, Changes with its History tab (mods/git-changes/fused.js): no Graph
++// button, and Changes stands for both. The child ids they sit under, or null.
++function gitPair(body) {
++  const kids = body?.children ?? [], mod = (c) => (c.type === "block" ? c.content?.mod : null);
++  const changes = kids.find((c) => mod(c) === "git-changes"), graph = kids.find((c) => mod(c) === "git-graph");
++  return changes && graph ? { changes: changes.id, graph: graph.id } : null;
++}
++
  function find(node, id) {
-@@ -20,7 +20,8 @@
+   if (node?.id === id) return node;
+   for (const child of node?.children ?? []) {
+@@ -16,11 +25,14 @@
+   init(_props, cx) {
+     this.pressed = null;
+     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
++    // The fused Changes panel's last tab: the stack child Changes opens on.
++    this.lastGit = localStorage.getItem("git-tab");
+     // The Graph button shows only when the git-graph mod is installed
      // (github.com/rabeeh-ta/herdr-git-graph): without it the panel would be empty.
      this.hasGraph = false;
      cx.spawn(async (cx) => {
@@ -19,3 +36,29 @@ diff -ruN a/main.js b/main.js
        if (this.hasGraph) cx.notify();
      });
    }
+@@ -87,9 +99,13 @@
+     const panel = find(root, "panel"), body = find(root, "panel-body");
+     const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...(this.hasGraph ? ["graph"] : [])];
+     this.syncPanel(space, panel, body, enabled);
+-    const panelButton = (id, label, icon) => {
+-      const on = panel && !panel.hidden && body?.active === id;
+-      return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
++    const pair = gitPair(body), git = pair ? [pair.changes, pair.graph] : [];
++    if (pair && git.includes(body?.active) && body.active !== this.lastGit) { this.lastGit = body.active; localStorage.setItem("git-tab", body.active); }
++    const panelButton = (button, label, icon) => {
++      // Changes of the fused panel opens on its last tab and shows lit on either.
++      const fused = pair && button === "changes", id = fused && git.includes(this.lastGit) ? this.lastGit : button;
++      const on = panel && !panel.hidden && (fused ? git.includes(body?.active) : body?.active === id);
++      return h_flex().id(`panel-${button}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
+         .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
+         .on_click(() => {
+@@ -104,7 +120,7 @@
+       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
+       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
+       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
+-      .when(enabled.includes("graph"), el => el.child(panelButton("graph", "Graph", "mods/git-graph/icons/graph.svg")))
++      .when(enabled.includes("graph") && !pair, el => el.child(panelButton("graph", "Graph", "mods/git-graph/icons/graph.svg")))
+       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-graph/win-min.svg").size(16) : "−", () => run("window.minimize")))
+         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-graph/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
+         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-graph/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

@@ -51,21 +51,30 @@ diálogo con el nombre, el ícono y el color:
 - Vale también para worktrees y espacios de máquinas remotas. Se guarda en el `shared.json` de
   esta instalación de Herdr (`space.icons`, `space.colors`) y la imagen en `data/space-rename/`.
 
-### Paneles: Files, Changes y Graph
+### Paneles: Files y Changes (con History)
 
-![Panel derecho: a la izquierda Changes con el diff de dos archivos; a la derecha Graph con ramas, un merge y un tag](docs/panels.png)
+![Panel derecho: a la izquierda la pestaña Changes con dos archivos, el área de commit y el último commit; a la derecha la pestaña History con el grafo de git-graph (ramas, un merge, un tag, el remoto), Pull y Fetch arriba, y abajo los cambios sin commit con View Diff](docs/panels.png)
 
-- Pestañas en píldoras y tres botones a la derecha: **Files** (explorador y editor con pestañas,
-  `file-editor`), **Changes** (panel git estilo Zed, `git-changes`) y **Graph** (grafo de git con
-  acciones, `git-graph`).
+- Pestañas en píldoras y dos botones a la derecha: **Files** (explorador y editor con pestañas,
+  `file-editor`) y **Changes** (git: `git-changes` y `git-graph` en un solo panel).
 - **Changes** reemplaza al panel de Herdr: archivos con casillas para stage (en árbol o lista),
   stashes, área de commit (commit, amend, commit & push), botón de remoto (pull / push / publish /
-  fetch), cambio de rama, y una pestaña **History** con el grafo de commits. Al hacer clic en un
-  archivo, stash o commit, su diff se abre en una pestaña del área principal, en una o dos
-  columnas.
-- **Convive con Graph**: `git-changes` no crea ramas ni hace merge, rebase, cherry-pick ni tags;
-  eso sigue en **Graph**. Comparten la señal `git-graph.changed`, así que una acción en uno
-  refresca al otro.
+  fetch) y cambio de rama. Al hacer clic en un archivo, stash o el último commit, su diff se abre
+  en una pestaña del área principal, en una o dos columnas.
+- **History** es `git-graph`: el grafo de commits con todas las ramas o solo la actual, con o sin
+  remotos, y sus acciones (checkout, ramas, merge, rebase, cherry-pick, tags, revert, …) en el
+  clic derecho. Arriba, **Pull** (solo fast-forward) y **Fetch** de la rama; en el engranaje,
+  **Fetch in the background** (cada 3 min; si falla, espera el doble cada vez, hasta 6 h).
+- Al elegir un commit (o los cambios sin commit) se abre abajo con sus archivos y el diff de cada
+  uno; **View Diff**, o doble clic en la fila, abre el commit entero en la pestaña de diff del
+  área principal.
+- **Manygit**: si la carpeta del terminal no es un repo, History lista los repos que hay dentro,
+  cada uno con su rama, cambios sin commit y ↑/↓ contra su upstream, con **Fetch all** y
+  **Pull all**; al abrir uno se ve su grafo.
+- Son dos mods en la misma pila del layout (`panel-body`); cada uno dibuja la misma barra
+  **Changes | History** y la pestaña cambia de uno a otro (`fused.js` en los dos). Comparten la
+  señal `git-graph.changed`, así que una acción en uno refresca al otro. El botón **Graph** de
+  `tabs-graph` se oculta cuando están juntos, y **Changes** vuelve a la última pestaña.
 
 ### Markdown: diagramas Mermaid
 
@@ -99,19 +108,19 @@ Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-ap
 
 | Pieza | Qué es | Origen | En este repo |
 |---|---|---|---|
-| `layouts/cyber-romo.json` | La ventana completa: barra lateral (marca, espacios, agentes, pie), barra de pestañas, paneles, panel derecho (Files, Changes, Graph) y barra de estado | catppuccin de MarcozVD, con cambios | sí |
+| `layouts/cyber-romo.json` | La ventana completa: barra lateral (marca, espacios, agentes, pie), barra de pestañas, paneles, panel derecho (Files, y Changes con su History) y barra de estado | catppuccin de MarcozVD, con cambios | sí |
 | `mods/agents-claude` | La lista de agentes descrita arriba | propio (clon de `agents` de Herdr) | sí |
 | `mods/brand-chrome` | Barra de título con el logo MrRomo | propio (clon de `workspace-chrome`) | sí |
 | `mods/brand-title` | Fuente Orbitrox que usan brand-chrome y brand-splash | propio; Orbitron bajo OFL | sí |
 | `mods/brand-splash` | Splash MrRomo | propio | sí |
 | `mods/space-rename` | Diálogo para renombrar un espacio y elegir su ícono y color | propio | sí |
 | `mods/space-menu` | Menú del clic derecho en un espacio; su Rename abre space-rename | propio (copia del `menu` de Herdr) | sí |
-| `mods/git-graph` | Grafo de git y acciones (panel Graph) | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT | sí (`licenses/git-graph-MIT.txt`) |
-| `mods/git-changes` | Panel Changes estilo Zed (stage, commit, stash, push/pull, History y diff en el área principal); reemplaza al `changes` de Herdr en el layout | [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes) `94bacef`, MIT (con partes Apache-2.0 e ISC) | sí (`licenses/git-changes/`) |
+| `mods/git-graph` | Grafo de git, acciones, Pull, fetch en segundo plano y Manygit: la pestaña History del panel Changes (`fused.js`) | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) 0.3.3, MIT, con Pull / Pull all / fetch en segundo plano de [MrRomo/herdr-git-graph](https://github.com/MrRomo/herdr-git-graph/tree/feat/pull-and-background-fetch) `c23f428` (PR [#15](https://github.com/rabeeh-ta/herdr-git-graph/pull/15)) | sí (`licenses/git-graph-MIT.txt`) |
+| `mods/git-changes` | Panel Changes estilo Zed (stage, commit, stash, push/pull y diff en el área principal); reemplaza al `changes` de Herdr en el layout. Su pestaña History es `git-graph` (`fused.js`; se quitaron su `history.js` y `lanes.js`) | [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes) `94bacef`, MIT (con partes Apache-2.0 e ISC) | sí (`licenses/git-changes/`) |
 | `file-editor` | Explorador y editor con pestañas (panel Files); el parche dibuja los bloques ` ```mermaid ` de la vista previa de Markdown | [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor) v0.1.1 + `patches/file-editor.patch` | **no**: se descarga y se parcha |
 | `vendor/beautiful-mermaid` | El renderizador de Mermaid que usa el parche de file-editor: beautiful-mermaid 1.1.3 con elkjs 0.11.1 y entities 7.0.1 en un solo módulo para el QuickJS de Herdr (`build.sh` lo reconstruye) | [lukilabs/beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid), MIT; [kieler/elkjs](https://github.com/kieler/elkjs), EPL-2.0; [fb55/entities](https://github.com/fb55/entities), BSD-2-Clause | sí (`vendor/beautiful-mermaid/LICENSES.txt`); se instala en `mods/file-editor/vendor/` |
 | `spaces-icons` | Espacios con ícono, worktrees bajo su repo; el parche agrega el ícono elegido, el menú propio, `shift-f2` y conserva los colores al reiniciar | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) + `patches/spaces-icons.patch` | **no**: se descarga y se parcha |
-| `tabs-graph` | Pestañas en píldoras + Files / Changes / Graph | MarcozVD/herdr-layout-catppuccin + `patches/tabs-graph.patch` | **no**: se descarga y se parcha |
+| `tabs-graph` | Pestañas en píldoras + Files / Changes / Graph; el parche oculta Graph cuando `git-changes` y `git-graph` comparten pila (Changes los abre a los dos) | MarcozVD/herdr-layout-catppuccin + `patches/tabs-graph.patch` | **no**: se descarga y se parcha |
 | `herdr-catppuccin`, `herdr-catppuccin-latte` | Tema oscuro (mocha) y claro (latte); el layout sigue el modo del sistema | MarcozVD/herdr-layout-catppuccin | **no**: se descargan |
 | `config/keys.json`, `config/settings.json` | Teclas (cmd-shift-l cambia de layout, cmd-d divide, `shift-f2` renombra el espacio con ícono en este layout, …) y ajustes (zoom 1.2, Geist Mono, modo oscuro, sonidos) | propios | sí |
 
