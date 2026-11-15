@@ -81,6 +81,10 @@ export class Panel {
     this.editor.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
+    // cyber-romo: a hidden stack child isn't drawn, so render() can't notice a new place (a repo
+    // opened in History's Manygit list, another space) until the tab is clicked, and then it
+    // flickered while it read. Timers run while hidden: check the place (no git) and read it now.
+    cx.timer.every(300, (cx) => { if (key() !== this.context) this.refresh(cx); });
   }
 
   // --- reading ----------------------------------------------------------------
