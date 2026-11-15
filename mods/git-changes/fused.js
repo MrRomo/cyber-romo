@@ -8,7 +8,7 @@
 // tabStrip(); keep the two alike.
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { layout, run } from "herdr";
+import { layout, run, shared } from "herdr";
 
 const modOf = (node) => (node?.type === "block" ? node.content?.mod : null);
 
@@ -41,3 +41,8 @@ export function tabStrip(t, { tab, changes, onPick, history = true }) {
     .child(item("changes", changes ? `Changes (${changes})` : "Changes"))
     .when(history, (e) => e.child(item("history", "History")));
 }
+
+// What History's Manygit list says of this folder (git-graph/fused.js publishManygit):
+// { opened: the repository opened from the list, or null while the list shows; repos }, or
+// null when the folder was never listed.
+export const manygitOf = (cwd, on) => (cwd ? (shared("git-graph.manygit") ?? {})[`${on ?? ""}:${cwd}`] ?? null : null);

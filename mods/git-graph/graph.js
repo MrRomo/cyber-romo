@@ -12,7 +12,7 @@ import { icon } from "./menu.js";
 import { available, check, openUpdate, newer } from "./update.js";
 import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, REMOTES, FETCH, PULL, autofetchOn, autofetchDue, fetchKey, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
 // cyber-romo: the History tab of the Changes panel (see fused.js).
-import { gitPanel, showTab, tabStrip, openDiff, TABS_H } from "./fused.js";
+import { gitPanel, showTab, tabStrip, openDiff, publishManygit, TABS_H } from "./fused.js";
 
 // The frame the shown tab's panes are drawn in, so the panel beside them takes the
 // same corner radius; Herdr's own pane mod walks the same one (mods/pane/main.js).
@@ -263,6 +263,8 @@ export class Graph {
             await this.scan(cwd, on, stale, cx, timer); return;
           }
           if (!opened) this.workspace = null;
+          // cyber-romo: the Changes tab shows the repository opened from the list (fused.js).
+          else this.publishOpened(cwd, on, opened);
           if (!on) this.watch(read.root, context, cx);
           // A second look that finds nothing new leaves the table as it is.
           const shown = this.state === "ready" || this.state === "empty";
@@ -301,6 +303,7 @@ export class Graph {
     const same = this.workspace?.root === cwd, statuses = same ? this.statuses : new Map();
     if (!same) this.reset();
     this.workspace = { root: cwd, depth, repos }; this.statuses = statuses; this.cwd = cwd; this.on = on; this.state = "workspace";
+    this.publishOpened(cwd, on, null);
     if (!on) { this.watching = "workspace"; this.watchRepos(repos, cx); }
     cx.notify();
     await pool(repos, 8, (repo) => this.readStatus(repo.path, on, stale, cx));
@@ -459,14 +462,22 @@ export class Graph {
     });
   }
 
+  // cyber-romo: which repository of this Manygit list is open (null: the list shows), for the
+  // Changes tab. Only the panel's copy says: a pane opened on a folder keeps to itself.
+  publishOpened(root, on, opened) {
+    if (!this.folder && this.workspace) publishManygit(root, on, { opened, repos: this.workspace.repos.length });
+  }
+
   open(path, cx) {
     const { workspace, statuses, cwd, on } = this;
+    this.publishOpened(workspace?.root, on, path);
     this.reset(); Object.assign(this, { workspace, statuses, cwd, on, opened: path, state: "loading" });
     this.refresh(cx); cx.notify();
   }
 
   back(cx) {
     const { workspace, statuses, cwd, on } = this;
+    this.publishOpened(workspace?.root, on, null);
     this.reset(); Object.assign(this, { workspace, statuses, cwd, on, state: "workspace" });
     this.refresh(cx); cx.notify();
   }

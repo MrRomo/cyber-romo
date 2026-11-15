@@ -70,7 +70,9 @@ diálogo con el nombre, el ícono y el color:
   área principal.
 - **Manygit**: si la carpeta del terminal no es un repo, History lista los repos que hay dentro,
   cada uno con su rama, cambios sin commit y ↑/↓ contra su upstream, con **Fetch all** y
-  **Pull all**; al abrir uno se ve su grafo.
+  **Pull all**. Al abrir uno se ve su grafo, y la pestaña **Changes** muestra ese mismo repo
+  (stage, commit, push…); mientras se ve la lista, Changes dice cuántos repos hay y lleva a
+  History. El repo abierto de cada carpeta se comparte en `git-graph.manygit`.
 - Son dos mods en la misma pila del layout (`panel-body`); cada uno dibuja la misma barra
   **Changes | History** y la pestaña cambia de uno a otro (`fused.js` en los dos). Comparten la
   señal `git-graph.changed`, así que una acción en uno refresca al otro. El botón **Graph** de

@@ -22,21 +22,35 @@ import { spaces, panes, focused, exec, watchFolder, theme, settings, notify, sha
 import * as G from "./git.js";
 import { icon, menuHeight } from "./menu.js";
 import { showInTab, shownIn, shownSource, getLayout, setLayout } from "./diff.js";
-import { gitPanel, showTab, tabStrip } from "./fused.js";
+import { gitPanel, showTab, tabStrip, manygitOf } from "./fused.js";
+
+// The focused terminal's folder and machine (git-graph reads them the same way).
+function terminalFolder() {
+  const space = spaces().find((s) => s.active), f = focused();
+  const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
+  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
+  return { space, pane, cwd: pane?.cwd || f?.cwd || space?.folder, on };
+}
 
 // The focused terminal's folder, or `props.folder` when opened as a pane on one repository.
 function location() {
   const fixed = props()?.folder;
   if (fixed) return { cwd: fixed, on: props()?.on ?? null };
-  const space = spaces().find((s) => s.active), f = focused();
-  const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
+  const { space, pane, cwd, on } = terminalFolder();
   // The diff tab is a mod pane with no folder: keep showing the repository it shows.
   if (pane?.mod === "git-changes") {
     const shown = shownSource(space?.id);
     if (shown) return { cwd: shown.root, on: shown.on ?? null };
   }
-  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+  // cyber-romo: a folder that holds repositories (History's Manygit list) shows the one opened there.
+  return { cwd: manygitOf(cwd, on)?.opened || cwd, on };
+}
+
+// History's Manygit list for the terminal's folder while it shows (no repository opened), or null.
+function manygitList() {
+  if (props()?.folder) return null;
+  const { cwd, on } = terminalFolder(), list = manygitOf(cwd, on);
+  return list && !list.opened && list.repos > 0 ? list : null;
 }
 const key = () => JSON.stringify(location());
 const itemKey = (it) => (it ? `${it.area}:${it.ref ?? it.hash ?? it.path ?? ""}` : "");
@@ -617,6 +631,17 @@ export class Panel {
       .when(Boolean(pair), (e) => e.child(this.iconButton("history", "history", "History", () => this.showHistory(), t)));
   }
 
+  // No repository here. In a folder History lists as Manygit, say how to pick one.
+  noRepo(t, pair) {
+    const list = this.error && manygitList();
+    if (!list) return div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : "No folder"));
+    return v_flex().p(8).gap(6).text_color(t.dim)
+      .child(div().child(`This folder holds ${list.repos} ${list.repos === 1 ? "repository" : "repositories"}.`))
+      .child(div().child("Open one in History (Manygit) to see its changes here."))
+      .when(Boolean(pair), (e) => e.child(div().id("gc-open-history").text_color(t.accent).cursor_pointer().hover((s) => s.underline())
+        .on_click(() => this.showHistory()).child("Open History")));
+  }
+
   render(cx) {
     if (key() !== this.context) this.refresh(cx);
     const changed = shared("git-graph.changed");
@@ -635,7 +660,7 @@ export class Panel {
       .when(Boolean(this.root), (e) => e.child(this.toolbar(t)))
       .child(v_flex().id("git-changes-list").flex_1().min_h(0).overflow_y_scrollbar().p(6)
         .children(list)
-        .when(!this.root, (el) => el.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : "No folder")))))
+        .when(!this.root, (el) => el.child(this.noRepo(t, pair))))
       .when(this.limited, (e) => e.child(div().px(12).py(4).text_size(11).text_color(t.dim).child(`Showing the first ${G.LIMIT.toLocaleString()} files`)))
       .when(Boolean(this.note), (e) => e.child(div().id("note").px(10).py(6).flex_none().border_t(1).border_color(t.border).text_size(11).text_color(t.ansi1).cursor_pointer().tooltip("Click to dismiss")
         .on_click((_e, cx) => { this.note = null; cx.notify(); }).child(this.note)))

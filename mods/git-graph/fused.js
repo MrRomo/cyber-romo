@@ -60,3 +60,17 @@ export function openDiff(item, source) {
   if (tab) { run("tab.rename", { id: tab, name }); run("tab.select", { id: tab }); }
   else if (!opening) run("tab.new", { space: space.id, name, mod: "git-changes", props: { role: "diff", space: space.id } });
 }
+
+// The repository opened from each Manygit list, so the Changes tab shows the same one
+// (git-changes/fused.js manygitOf). Keyed by machine and the listed folder (the focused
+// terminal's, as both mods read it): { opened: path or null while the list shows, repos }.
+// The newest 50 folders are kept.
+const MANYGIT = "git-graph.manygit";
+export const manygitKey = (cwd, on) => `${on ?? ""}:${cwd}`;
+export function publishManygit(cwd, on, { opened, repos }) {
+  if (!cwd) return;
+  const all = shared(MANYGIT) ?? {}, key = manygitKey(cwd, on), old = all[key];
+  if (old && old.opened === (opened ?? null) && old.repos === repos) return;
+  const kept = Object.entries(all).filter(([k]) => k !== key).sort(([, a], [, b]) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 49);
+  setShared(MANYGIT, { ...Object.fromEntries(kept), [key]: { opened: opened ?? null, repos, at: Date.now() } });
+}
