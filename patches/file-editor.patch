@@ -1,0 +1,698 @@
+diff -ruN a/file-logic.js b/file-logic.js
+--- a/file-logic.js
++++ b/file-logic.js
+@@ -696,9 +696,11 @@
+  *
+  * @param {string | null | undefined} source - Markdown source text.
+  * @param {number} [viewportWidth=800] - Available viewport width in pixels.
++ * @param {((block: MarkdownBlock, width: number) => number | null) | null} [measure=null] - The
++ *   drawn height of a code block shown as something else (a Mermaid diagram), or null to estimate it as code.
+  * @returns {number} Estimated content height in pixels.
+  */
+-export function estimateMarkdownHeight(source, viewportWidth = 800) {
++export function estimateMarkdownHeight(source, viewportWidth = 800, measure = null) {
+   if (typeof source !== "string" || !source.trim()) return 0;
+   const blocks = parseMarkdownBlocks(source);
+   if (!blocks.length) return 0;
+@@ -709,7 +711,7 @@
+ 
+   for (let i = 0; i < blocks.length; i++) {
+     if (i > 0) total += 16; // Block vertical gap: gap(16)
+-    total += estimateBlockHeight(blocks[i], contentWidth);
++    total += estimateBlockHeight(blocks[i], contentWidth, measure);
+   }
+ 
+   // 1.35x safety multiplier to absorb UI zoom (e.g. 1.1x zoom + font variations)
+@@ -722,9 +724,10 @@
+  *
+  * @param {MarkdownBlock} block
+  * @param {number} width - Available content width for text wrapping.
++ * @param {((block: MarkdownBlock, width: number) => number | null) | null} [measure=null]
+  * @returns {number}
+  */
+-function estimateBlockHeight(block, width) {
++function estimateBlockHeight(block, width, measure = null) {
+   if (!block) return 0;
+   switch (block.type) {
+     case "heading": {
+@@ -748,6 +751,8 @@
+       return lines * 26; // line_height: 24px + inter-paragraph spacing margin
+     }
+     case "code": {
++      const measured = measure ? measure(block, width) : null;
++      if (typeof measured === "number" && Number.isFinite(measured)) return measured;
+       const lines = (block.text || "").split("\n").length;
+       return lines * 22 + 36; // line_height 20px + p(16) top/bottom
+     }
+@@ -760,7 +765,7 @@
+       const sub = block.blocks || [];
+       for (let i = 0; i < sub.length; i++) {
+         if (i > 0) h += 16;
+-        h += estimateBlockHeight(sub[i], innerWidth);
++        h += estimateBlockHeight(sub[i], innerWidth, measure);
+       }
+       return h + 8;
+     }
+@@ -775,7 +780,7 @@
+         const sub = items[i].blocks || [];
+         for (let j = 0; j < sub.length; j++) {
+           if (j > 0) itemH += 10; // gap(8) between blocks within a list item
+-          itemH += estimateBlockHeight(sub[j], innerWidth);
++          itemH += estimateBlockHeight(sub[j], innerWidth, measure);
+         }
+         h += Math.max(26, itemH);
+       }
+diff -ruN a/main.js b/main.js
+--- a/main.js
++++ b/main.js
+@@ -6,7 +6,8 @@
+  *
+  * Mode 2 (File Editor Tab): When props().file is set, renders a full-pane editor tab with:
+  * - Syntax highlighting (Editor / EditorState) for code and configuration files.
+- * - GitHub-style Markdown preview (markdown-view.js) for .md / .markdown / .mdx.
++ * - GitHub-style Markdown preview (markdown-view.js) for .md / .markdown / .mdx, with
++ *   ```mermaid blocks drawn as diagrams (mermaid.js).
+  * - Rendered SVG preview for .svg, with a Code view toggle.
+  * - Zoomable, pannable raster image and SVG previews (25%–400%).
+  * - Soft-wrap toggle, copy button, file reload, and live disk watching.
+@@ -92,6 +93,8 @@
+   buildSplitPaneRequest,
+ } from "./file-logic.js";
+ import { renderMarkdownDocument } from "./markdown-view.js";
++import { MermaidDiagrams } from "./mermaid.js";
++import { isMermaidLang, mermaidColors, mermaidDisplaySize } from "./mermaid-svg.js";
+ 
+ /** In-memory cache for open and recent file tab states (scroll, cursor, text, view mode, EditorState). */
+ const fileTabStates = new Map();
+@@ -360,6 +363,7 @@
+    */
+   async close(_cx) {
+     this.closed = true;
++    this.mermaid?.close();
+     this.watched = null;
+     this.watchToken = null;
+     this.hoveredPath = null;
+@@ -1742,7 +1746,7 @@
+             ? this.renderImageView(t)
+             : !isCodeView
+               ? isMarkdown
+-                ? this.renderMarkdownView(t)
++                ? this.renderMarkdownView(t, cx)
+                 : this.renderSvgView(t)
+               : this.renderCodeView(t)
+       );
+@@ -2006,24 +2010,45 @@
+ 
+   /**
+    * Renders the Markdown preview as a GitHub-style document, centered in a readable column.
++   * Mermaid blocks are drawn by this tab's MermaidDiagrams, which redraws it as each is ready.
+    *
+    * @param {Record<string, string>} t
++   * @param {import("gpui-kit").ViewContext} cx
+    * @returns {import("gpui-kit").Element}
+    */
+-  renderMarkdownView(t) {
++  renderMarkdownView(t, cx) {
+     const codeFont = settings()?.font_family ?? null;
+     const mdId = fileElementId("file-editor-markdown", this.fileKey);
+     const viewportHeight = this.tabViewport?.height || 600;
+     const viewportWidth = this.tabViewport?.width || 800;
++    // The document column: the same width estimateMarkdownHeight assumes.
++    const columnWidth = Math.min(880, Math.max(280, viewportWidth - 64));
++    this.mermaid ??= new MermaidDiagrams();
++    const colors = mermaidColors(t);
++    const diagram = (source) => this.mermaid.get(source, colors);
++    const measureDiagram = (block, width) => {
++      if (!isMermaidLang(block.lang)) return null;
++      const drawing = diagram(block.text);
++      return drawing.status === "ready" ? mermaidDisplaySize(drawing, width).height : null;
++    };
+     const bottomPadding = Math.max(160, Math.round(viewportHeight * 0.4));
+     const estContentHeight = Math.max(
+       viewportHeight,
+-      estimateMarkdownHeight(this.preparedText ?? "", viewportWidth) + bottomPadding
++      estimateMarkdownHeight(this.preparedText ?? "", viewportWidth, measureDiagram) + bottomPadding
+     );
+     const maxScroll = Math.max(0, estContentHeight - viewportHeight);
+     if (this.preparedText && !this.loading) {
+       this.mdScrollY = Math.max(0, Math.min(maxScroll, this.mdScrollY || 0));
+     }
++    const doc = renderMarkdownDocument(this.preparedText ?? "", {
++      t,
++      codeFont,
++      idPrefix: `md-${mdId}`,
++      maxWidth: columnWidth,
++      diagram,
++    });
++    // Draws the diagrams this render asked for; each one redraws the tab when ready.
++    this.mermaid.pump(cx);
+ 
+     return div()
+       .relative()
+@@ -2063,7 +2088,7 @@
+                 div()
+                   .w_full()
+                   .max_w(880)
+-                  .child(renderMarkdownDocument(this.preparedText ?? "", { t, codeFont, idPrefix: `md-${mdId}` }))
++                  .child(doc)
+               )
+           )
+       )
+diff -ruN a/markdown-view.js b/markdown-view.js
+--- a/markdown-view.js
++++ b/markdown-view.js
+@@ -2,12 +2,14 @@
+  * GitHub-style Markdown preview. Block structure (headings with rules, code boxes,
+  * bordered tables, quote bars, list markers and task boxes) is drawn here, because
+  * TextView.markdown takes no styling. Inline runs (emphasis, code, links) go through
+- * TextView.markdown, which does handle them.
++ * TextView.markdown, which does handle them. ```mermaid blocks are drawn as diagrams when the
++ * caller passes `ctx.diagram` (mermaid.js).
+  */
+ 
+-import { div } from "gpui-kit";
++import { div, image } from "gpui-kit";
+ import { v_flex, h_flex, TextView } from "gpui-base";
+ import { parseMarkdownBlocks } from "./file-logic.js";
++import { isMermaidLang, mermaidDisplaySize } from "./mermaid-svg.js";
+ 
+ /** Font sizes for h1..h6, following GitHub's 2em/1.5em/1.25em/1em/0.875em/0.85em scale on a 16px body. */
+ const HEADING_SIZE = { 1: 32, 2: 24, 3: 20, 4: 16, 5: 14, 6: 13.6 };
+@@ -20,8 +22,10 @@
+  * Renders Markdown source as a GitHub-style document.
+  *
+  * @param {string} source
+- * @param {{ t: Record<string, string>, codeFont: string | null, idPrefix: string }} ctx
+- *   `t` is the theme; `codeFont` the editor font for code; `idPrefix` keeps TextView ids unique.
++ * @param {{ t: Record<string, string>, codeFont: string | null, idPrefix: string, maxWidth?: number,
++ *   diagram?: (source: string) => { status: string, src?: string, width?: number, height?: number, message?: string } }} ctx
++ *   `t` is the theme; `codeFont` the editor font for code; `idPrefix` keeps TextView ids unique;
++ *   `maxWidth` the column width diagrams shrink to fit; `diagram` the state of a Mermaid drawing.
+  * @returns {import("gpui-kit").Element}
+  */
+ export function renderMarkdownDocument(source, ctx) {
+@@ -59,7 +63,7 @@
+     case "paragraph":
+       return renderInline(block.text, ctx, path, BODY_SIZE, ctx.t.foreground);
+     case "code":
+-      return renderCode(block, ctx);
++      return ctx.diagram && isMermaidLang(block.lang) ? renderDiagram(block, ctx) : renderCode(block, ctx);
+     case "quote":
+       return renderQuote(block, ctx, path);
+     case "list":
+@@ -137,6 +141,48 @@
+ }
+ 
+ /**
++ * A Mermaid diagram, centered and shrunk to the column. Until it is drawn the block shows its
++ * source; if it can't be drawn, the source under the renderer's message.
++ *
++ * @param {{ text: string }} block
++ * @param {object} ctx
++ * @returns {import("gpui-kit").Element}
++ */
++function renderDiagram(block, ctx) {
++  const drawing = ctx.diagram(block.text);
++  if (drawing.status === "ready") {
++    const size = mermaidDisplaySize(drawing, ctx.maxWidth);
++    return h_flex().w_full().justify_center().child(image(drawing.src).flex_none().w(size.width).h(size.height));
++  }
++  if (drawing.status === "error") {
++    return v_flex()
++      .w_full()
++      .gap(6)
++      .child(
++        div()
++          .w_full()
++          .text_size(13)
++          .line_height("18px")
++          .text_color(ctx.t.muted)
++          .child(`Mermaid: ${drawing.message}`)
++      )
++      .child(renderCode(block, ctx));
++  }
++  return renderCode(block, ctx);
++}
++
++/**
++ * A narrower copy of ctx for nested blocks, so diagrams fit beside a quote bar or list marker.
++ *
++ * @param {object} ctx
++ * @param {number} inset
++ * @returns {object}
++ */
++function insetCtx(ctx, inset) {
++  return Number.isFinite(ctx.maxWidth) ? { ...ctx, maxWidth: Math.max(100, ctx.maxWidth - inset) } : ctx;
++}
++
++/**
+  * A block quote: nested blocks beside a muted bar.
+  *
+  * @param {{ blocks: import("./file-logic.js").MarkdownBlock[] }} block
+@@ -154,7 +200,7 @@
+         .flex_1()
+         .min_w(0)
+         .text_color(ctx.t.muted)
+-        .child(renderBlocks(block.blocks, ctx, path, 16))
++        .child(renderBlocks(block.blocks, insetCtx(ctx, 24), path, 16))
+     );
+ }
+ 
+@@ -182,7 +228,7 @@
+             div()
+               .flex_1()
+               .min_w(0)
+-              .child(renderBlocks(item.blocks, ctx, `${path}.${i}`, 8))
++              .child(renderBlocks(item.blocks, insetCtx(ctx, 40), `${path}.${i}`, 8))
+           )
+       )
+     );
+diff -ruN a/mermaid-svg.js b/mermaid-svg.js
+--- a/mermaid-svg.js
++++ b/mermaid-svg.js
+@@ -0,0 +1,286 @@
++/**
++ * Mermaid diagrams in the Markdown preview: the pure part (no host calls, so it also runs under
++ * Node for tests). Which fences are Mermaid, a stable key per drawing, the theme colors a
++ * drawing uses, and the rewrite that makes beautiful-mermaid's SVG drawable by the host.
++ *
++ * beautiful-mermaid themes its SVG with CSS custom properties and color-mix(), and asks for
++ * Inter from Google Fonts. The host rasterizes SVG with resvg, which supports none of that: it
++ * would draw every node black. So the rewrite resolves each var() and color-mix() to a plain
++ * color, drops the @import, names fonts the machine has, and sizes the root for a crisp bitmap.
++ */
++
++/** Bump when the renderer or the rewrite changes: cached drawings are keyed by it. */
++export const MERMAID_RENDER_VERSION = "beautiful-mermaid@1.1.3/1";
++
++/** Fonts for diagram text, first installed wins. beautiful-mermaid sizes its boxes for Inter. */
++export const MERMAID_FONTS = "Inter, 'Helvetica Neue', Helvetica, Arial, 'Noto Sans', 'DejaVu Sans', sans-serif";
++
++/** The rasterized bitmap: up to 3x the diagram's own size, its longest side at most 2400 px. */
++const MAX_RASTER_SCALE = 3;
++const MAX_RASTER_SIDE = 2400;
++
++/**
++ * True for a fenced block whose info string is `mermaid` (any case).
++ *
++ * @param {string | null | undefined} lang
++ * @returns {boolean}
++ */
++export function isMermaidLang(lang) {
++  return typeof lang === "string" && lang.trim().toLowerCase() === "mermaid";
++}
++
++/**
++ * The colors a diagram is drawn with, from the Herdr theme: the preview's background and text,
++ * the accent for arrow heads and the muted text for labels. Lines, fills and strokes are mixed
++ * from these by beautiful-mermaid.
++ *
++ * @param {Record<string, string>} t Herdr theme
++ * @returns {{ bg: string, fg: string, accent?: string, muted?: string }}
++ */
++export function mermaidColors(t) {
++  const colors = { bg: t?.background || "#ffffff", fg: t?.foreground || "#27272a" };
++  if (t?.accent) colors.accent = t.accent;
++  if (t?.muted) colors.muted = t.muted;
++  return colors;
++}
++
++/**
++ * A stable 64-bit hex key for one drawing: renderer version, colors and source.
++ *
++ * @param {string} source
++ * @param {Record<string, string>} colors
++ * @returns {string}
++ */
++export function mermaidKey(source, colors) {
++  const text = `${MERMAID_RENDER_VERSION}\n${JSON.stringify(colors ?? {})}\n${source ?? ""}`;
++  let h1 = 0xdeadbeef ^ text.length;
++  let h2 = 0x41c6ce57 ^ text.length;
++  for (let i = 0; i < text.length; i++) {
++    const ch = text.charCodeAt(i);
++    h1 = Math.imul(h1 ^ ch, 2654435761);
++    h2 = Math.imul(h2 ^ ch, 1597334677);
++  }
++  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
++  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
++  return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
++}
++
++/**
++ * The size to show a diagram at: its own size, scaled down to fit `maxWidth`.
++ *
++ * @param {{ width: number, height: number }} natural
++ * @param {number} [maxWidth]
++ * @returns {{ width: number, height: number }}
++ */
++export function mermaidDisplaySize(natural, maxWidth) {
++  const w = Math.max(1, natural?.width || 1);
++  const h = Math.max(1, natural?.height || 1);
++  const fit = Number.isFinite(maxWidth) && maxWidth > 0 && w > maxWidth ? maxWidth / w : 1;
++  return { width: Math.max(1, Math.round(w * fit)), height: Math.max(1, Math.round(h * fit)) };
++}
++
++/**
++ * Rewrites beautiful-mermaid's SVG into one resvg draws as intended.
++ *
++ * @param {string} svg
++ * @returns {{ text: string, width: number, height: number }} The SVG and the diagram's own size.
++ */
++export function flattenMermaidSvg(svg) {
++  const root = /<svg\b[^>]*>/i.exec(svg);
++  if (!root) throw new Error("the renderer returned no <svg>");
++  const tag = root[0];
++
++  // Custom properties: the root's inline style (--bg, --fg, ...) wins over the <style> block's
++  // derived ones (--_text, --_line, ...).
++  const vars = new Map();
++  for (const block of svg.match(/<style\b[^>]*>[\s\S]*?<\/style>/gi) || []) collectCustomProperties(block, vars);
++  collectCustomProperties(attribute(tag, "style") ?? "", vars);
++
++  const viewBox = (attribute(tag, "viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
++  const hasViewBox = viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0;
++  const width = hasViewBox ? viewBox[2] : Number.parseFloat(attribute(tag, "width") ?? "") || 300;
++  const height = hasViewBox ? viewBox[3] : Number.parseFloat(attribute(tag, "height") ?? "") || 150;
++  const scale = Math.min(MAX_RASTER_SCALE, MAX_RASTER_SIDE / Math.max(width, height));
++
++  let rootTag = tag
++    .replace(/\s(?:width|height|style)\s*=\s*(["'])[^"']*\1/gi, "")
++    .replace(/^<svg/i, `<svg width="${Math.max(1, Math.round(width * scale))}" height="${Math.max(1, Math.round(height * scale))}"`);
++  if (!hasViewBox) rootTag = rootTag.replace(/^<svg/i, `<svg viewBox="0 0 ${width} ${height}"`);
++
++  let body = svg.slice(0, root.index) + rootTag + svg.slice(root.index + tag.length);
++  // Only stylesheets and attribute values are rewritten: a label may say "var(" too.
++  const resolve = (css) => resolveColorMix(resolveVars(css, vars, 0));
++  body = body.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_m, attrs, css) => {
++    const cleaned = css
++      .replace(/@import\s+(?:url\([^)]*\)|"[^"]*"|'[^']*')[^;]*;/g, "")
++      .replace(/(^|[;{\s])--[\w-]+\s*:[^;{}]*;/g, "$1")
++      .replace(/font-family\s*:[^;}]*/g, `font-family: ${MERMAID_FONTS}`);
++    return `<style${attrs}>${resolve(cleaned)}</style>`;
++  });
++  body = body.replace(/(<[A-Za-z][^<>]*>)/g, (tag) =>
++    tag.replace(/(\s)([\w:-]+)(\s*=\s*)(["'])([^"']*)\4/g, (m, sp, name, eq, q, value) =>
++      name.startsWith("data-") || !/var\(|color-mix\(/.test(value) ? m : `${sp}${name}${eq}${q}${resolve(value)}${q}`
++    )
++  );
++  return { text: body, width: round2(width), height: round2(height) };
++}
++
++/**
++ * A cached drawing's own size, from the viewBox flattenMermaidSvg kept.
++ *
++ * @param {string} svg
++ * @returns {{ width: number, height: number } | null}
++ */
++export function readMermaidSvgSize(svg) {
++  const root = /<svg\b[^>]*>/i.exec(svg ?? "");
++  if (!root) return null;
++  const viewBox = (attribute(root[0], "viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
++  if (viewBox.length !== 4 || !viewBox.every(Number.isFinite) || viewBox[2] <= 0 || viewBox[3] <= 0) return null;
++  return { width: round2(viewBox[2]), height: round2(viewBox[3]) };
++}
++
++function round2(n) {
++  return Math.round(n * 100) / 100;
++}
++
++/** An attribute's value in one tag, or null. */
++function attribute(tag, name) {
++  const m = new RegExp(`\\s${name}\\s*=\\s*(["'])([^"']*)\\1`, "i").exec(tag);
++  return m ? m[2] : null;
++}
++
++/** Adds every `--name: value` declaration in `css` to `vars`. */
++function collectCustomProperties(css, vars) {
++  const re = /(--[\w-]+)\s*:\s*([^;{}]+)/g;
++  let m;
++  while ((m = re.exec(css))) vars.set(m[1], m[2].trim());
++}
++
++/** The index of the parenthesis closing the one at `open`, or -1. */
++function closingParen(text, open) {
++  let depth = 0;
++  for (let i = open; i < text.length; i++) {
++    if (text[i] === "(") depth++;
++    else if (text[i] === ")" && --depth === 0) return i;
++  }
++  return -1;
++}
++
++/** Splits at the commas not inside parentheses. */
++function splitTopLevel(text) {
++  const parts = [];
++  let depth = 0;
++  let start = 0;
++  for (let i = 0; i < text.length; i++) {
++    if (text[i] === "(") depth++;
++    else if (text[i] === ")") depth--;
++    else if (text[i] === "," && depth === 0) {
++      parts.push(text.slice(start, i));
++      start = i + 1;
++    }
++  }
++  parts.push(text.slice(start));
++  return parts.map((p) => p.trim());
++}
++
++/** Replaces each var(--name[, fallback]) with its value, resolved in turn. */
++function resolveVars(text, vars, depth) {
++  if (depth > 16 || !text.includes("var(")) return text;
++  let out = "";
++  let i = 0;
++  for (;;) {
++    const at = text.indexOf("var(", i);
++    if (at < 0) return out + text.slice(i);
++    const end = closingParen(text, at + 3);
++    if (end < 0) return out + text.slice(i);
++    const [name, ...rest] = splitTopLevel(text.slice(at + 4, end));
++    const fallback = rest.length ? rest.join(", ") : null;
++    const value = vars.has(name) ? vars.get(name) : fallback ?? "";
++    out += text.slice(i, at) + resolveVars(value, vars, depth + 1);
++    i = end + 1;
++  }
++}
++
++/** Replaces each color-mix(in srgb, A p%, B q%) with the mixed color, innermost first. */
++function resolveColorMix(text) {
++  let out = "";
++  let i = 0;
++  for (;;) {
++    const at = text.indexOf("color-mix(", i);
++    if (at < 0) return out + text.slice(i);
++    const end = closingParen(text, at + 9);
++    if (end < 0) return out + text.slice(i);
++    out += text.slice(i, at) + mixColors(resolveColorMix(text.slice(at + 10, end)));
++    i = end + 1;
++  }
++}
++
++/** Evaluates the inside of one color-mix() whose arguments are plain colors. */
++function mixColors(args) {
++  const [, first = "", second = ""] = splitTopLevel(args);
++  const a = colorStop(first);
++  const b = colorStop(second);
++  if (!a.color || !b.color) return a.color ? formatColor(a.color) : b.color ? formatColor(b.color) : "#000000";
++  let pa = a.pct;
++  let pb = b.pct;
++  if (pa == null && pb == null) pa = pb = 50;
++  else if (pa == null) pa = 100 - pb;
++  else if (pb == null) pb = 100 - pa;
++  const total = pa + pb;
++  if (total <= 0) return formatColor(a.color);
++  pa /= total;
++  pb /= total;
++  // Premultiplied, as CSS mixes colors with alpha.
++  const alpha = a.color.a * pa + b.color.a * pb;
++  const channel = (k) => (alpha > 0 ? (a.color[k] * a.color.a * pa + b.color[k] * b.color.a * pb) / alpha : 0);
++  return formatColor({ r: channel("r"), g: channel("g"), b: channel("b"), a: alpha });
++}
++
++/** A color-mix argument: a color and an optional percentage. */
++function colorStop(text) {
++  const m = /^(.*?)(?:\s+(-?\d+(?:\.\d+)?)%)?$/.exec(text.trim());
++  return { color: parseColor(m?.[1] ?? ""), pct: m?.[2] != null ? Number(m[2]) : null };
++}
++
++/**
++ * Parses #rgb, #rgba, #rrggbb, #rrggbbaa, rgb()/rgba() and a few names.
++ *
++ * @param {string} text
++ * @returns {{ r: number, g: number, b: number, a: number } | null}
++ */
++export function parseColor(text) {
++  const s = String(text ?? "").trim().toLowerCase();
++  if (s === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
++  if (s === "white") return { r: 255, g: 255, b: 255, a: 1 };
++  if (s === "black") return { r: 0, g: 0, b: 0, a: 1 };
++  const hex = /^#([0-9a-f]{3,8})$/.exec(s);
++  if (hex) {
++    let h = hex[1];
++    if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
++    if (h.length !== 6 && h.length !== 8) return null;
++    return {
++      r: parseInt(h.slice(0, 2), 16),
++      g: parseInt(h.slice(2, 4), 16),
++      b: parseInt(h.slice(4, 6), 16),
++      a: h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1,
++    };
++  }
++  const fn = /^rgba?\(([^)]*)\)$/.exec(s);
++  if (fn) {
++    const parts = fn[1].split(/[\s,/]+/).filter(Boolean);
++    if (parts.length < 3) return null;
++    const channel = (p) => (p.endsWith("%") ? (Number.parseFloat(p) * 255) / 100 : Number.parseFloat(p));
++    const alpha = parts[3] == null ? 1 : parts[3].endsWith("%") ? Number.parseFloat(parts[3]) / 100 : Number.parseFloat(parts[3]);
++    const c = { r: channel(parts[0]), g: channel(parts[1]), b: channel(parts[2]), a: alpha };
++    return [c.r, c.g, c.b, c.a].every(Number.isFinite) ? c : null;
++  }
++  return null;
++}
++
++/** #rrggbb when opaque, rgba() otherwise (resvg reads both). */
++function formatColor(c) {
++  const byte = (v) => Math.max(0, Math.min(255, Math.round(v)));
++  const a = Math.max(0, Math.min(1, c.a));
++  if (a >= 0.999) return "#" + [c.r, c.g, c.b].map((v) => byte(v).toString(16).padStart(2, "0")).join("");
++  return `rgba(${byte(c.r)},${byte(c.g)},${byte(c.b)},${Math.round(a * 1000) / 1000})`;
++}
+diff -ruN a/mermaid.js b/mermaid.js
+--- a/mermaid.js
++++ b/mermaid.js
+@@ -0,0 +1,135 @@
++/**
++ * Mermaid diagrams in the Markdown preview: drawing and caching (see mermaid-svg.js for the
++ * pure part).
++ *
++ * Each ```mermaid block is drawn to SVG by beautiful-mermaid (vendor/, MIT; its layout engine
++ * is elkjs, EPL-2.0: see vendor/beautiful-mermaid.LICENSES.txt), entirely in this process, with
++ * no browser and no network. The renderer is ~1.5 MB, so it is only loaded the first time a
++ * diagram has to be drawn. Each drawing is written once to
++ * <app home>/cache/file-editor/mermaid/<key>.svg, keyed by its source and theme colors, and
++ * shown with image(): a diagram drawn before (in this session or an earlier one) is shown
++ * without loading the renderer at all. Drawings older than 30 days are deleted (and drawn
++ * again if still needed).
++ */
++
++import { appHome, exec, readTextFile, writeTextFile } from "herdr";
++import { mermaidKey, flattenMermaidSvg, readMermaidSvgSize } from "./mermaid-svg.js";
++
++/** Where drawings go, relative to the app home (image() paths resolve against it). */
++const CACHE_DIR = "cache/file-editor/mermaid";
++
++/** Diagram states a view keeps: past this, the oldest finished ones are forgotten. */
++const MAX_ENTRIES = 200;
++
++/** Drawings older than this are deleted, once per load of this module. */
++const PRUNE_DAYS = 30;
++let pruned = false;
++
++/**
++ * The diagrams one view shows. `get` answers during render and queues what is new; `pump`
++ * draws the queue in a task, one diagram at a time, redrawing the view after each.
++ */
++export class MermaidDiagrams {
++  constructor() {
++    /** @type {Map<string, { status: "pending" } | { status: "ready", src: string, width: number, height: number } | { status: "error", message: string }>} */
++    this.entries = new Map();
++    /** @type {Array<{ key: string, source: string, colors: Record<string, string> }>} */
++    this.queue = [];
++    this.running = false;
++    this.closed = false;
++  }
++
++  /**
++   * One diagram's state; a new one is queued and reported as pending.
++   *
++   * @param {string} source
++   * @param {Record<string, string>} colors
++   */
++  get(source, colors) {
++    const key = mermaidKey(source, colors);
++    let entry = this.entries.get(key);
++    if (!entry) {
++      entry = { status: "pending" };
++      this.entries.set(key, entry);
++      this.queue.push({ key, source, colors });
++      this.forgetOldest();
++    }
++    return entry;
++  }
++
++  /**
++   * Draws whatever `get` queued. Call it after rendering the document.
++   *
++   * @param {import("gpui-kit").ViewContext} cx
++   */
++  pump(cx) {
++    if (this.running || this.closed || this.queue.length === 0) return;
++    this.running = true;
++    cx.spawn(async (cx) => {
++      try {
++        while (this.queue.length > 0 && !this.closed) {
++          const job = this.queue.shift();
++          this.entries.set(job.key, await drawDiagram(job));
++          if (!this.closed) cx.notify();
++        }
++      } finally {
++        this.running = false;
++      }
++    });
++  }
++
++  /** Keeps `entries` bounded when a document keeps changing (an agent rewriting it). */
++  forgetOldest() {
++    if (this.entries.size <= MAX_ENTRIES) return;
++    for (const [key, entry] of this.entries) {
++      if (this.entries.size <= MAX_ENTRIES) break;
++      if (entry.status !== "pending") this.entries.delete(key);
++    }
++  }
++
++  /** Stops drawing (the view closed). */
++  close() {
++    this.closed = true;
++    this.queue = [];
++  }
++}
++
++/**
++ * Draws one diagram, or finds it drawn already.
++ *
++ * @param {{ key: string, source: string, colors: Record<string, string> }} job
++ */
++async function drawDiagram({ key, source, colors }) {
++  const home = appHome();
++  const dir = `${home}/${CACHE_DIR}`;
++  const rel = `${CACHE_DIR}/${key}.svg`;
++  const path = `${home}/${rel}`;
++  try {
++    const size = readMermaidSvgSize(await readTextFile(path).catch(() => null));
++    if (size) return { status: "ready", src: rel, ...size };
++    const { renderMermaidSVG } = await import("./vendor/beautiful-mermaid.js");
++    const svg = flattenMermaidSvg(renderMermaidSVG(source, { ...colors, transparent: true }));
++    await exec("mkdir", ["-p", dir]);
++    // null: only if it isn't there. Another tab may have just written the same drawing.
++    await writeTextFile(path, svg.text, null).catch(async (error) => {
++      if (!readMermaidSvgSize(await readTextFile(path).catch(() => null))) throw error;
++    });
++    pruneOldDrawings(dir);
++    return { status: "ready", src: rel, width: svg.width, height: svg.height };
++  } catch (error) {
++    return { status: "error", message: errorMessage(error) };
++  }
++}
++
++/** Deletes drawings nobody wrote for PRUNE_DAYS (best effort; `find` is not on Windows). */
++function pruneOldDrawings(dir) {
++  if (pruned) return;
++  pruned = true;
++  exec("find", [dir, "-name", "*.svg", "-type", "f", "-mtime", `+${PRUNE_DAYS}`, "-delete"]).catch(() => null);
++}
++
++/** The first line of an error, without the renderer's stack. */
++function errorMessage(error) {
++  const text = String(error?.message ?? error ?? "could not draw this diagram").trim();
++  return text.split("\n")[0].slice(0, 300) || "could not draw this diagram";
++}

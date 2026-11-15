@@ -51,7 +51,7 @@ with open(path, "w") as f:
     f.write("\n")
 PY
 }
-while IFS=$'\t' read -r name kind repo commit path patch; do
+while IFS=$'\t' read -r name kind repo commit path patch files; do
   up="$(fetch "$repo" "$commit")" || die "could not download github.com/$repo at $commit"
   if [ "$kind" = theme ]; then
     cmp -s "$up/$path" "$SRC/themes/$name.json" && echo "  theme   $name (as its author's)" \
@@ -59,11 +59,20 @@ while IFS=$'\t' read -r name kind repo commit path patch; do
     continue
   fi
   [ -f "$SRC/mods/$name/mod.json" ] || die "mod $name is missing in $SRC/mods"
+  # The files this repo adds to the mod (third-party.json "files") stay out of the patch: they
+  # travel whole. A live copy that differs from this repo's is only reported.
+  added=()
+  while IFS= read -r pair; do
+    [ -n "$pair" ] || continue
+    added+=(--exclude "/${pair%%=*}")
+    cmp -s "$SRC/mods/$name/${pair%%=*}" "$REPO/${pair#*=}" \
+      || echo "  WARNING: $name/${pair%%=*} differs from this repo's ${pair#*=} (not exported: rebuild that file here)"
+  done < <(added_files "$files")
   work="$FETCHED/diff-$name"
   rm -rf "$work"
   mkdir -p "$work/a" "$work/b"
   rsync -a "${excludes[@]}" "$up/$path/" "$work/a/"
-  rsync -a "${excludes[@]}" "$SRC/mods/$name/" "$work/b/"
+  rsync -a "${excludes[@]}" ${added[@]+"${added[@]}"} "$SRC/mods/$name/" "$work/b/"
   # diff exits 1 when they differ; the timestamps go, so an unchanged patch stays unchanged.
   (cd "$work" && diff -ruN a b || true) | sed -E 's/^((---|\+\+\+) [^	]+)	.*/\1/' > "$work/patch"
   if grep -q '^Binary files' "$work/patch"; then

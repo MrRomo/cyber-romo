@@ -67,6 +67,24 @@ diálogo con el nombre, el ícono y el color:
   eso sigue en **Graph**. Comparten la señal `git-graph.changed`, así que una acción en uno
   refresca al otro.
 
+### Markdown: diagramas Mermaid
+
+![Vista previa de un Markdown en file-editor: un flowchart horizontal con un rombo de decisión y una base de datos, y debajo un diagrama de secuencia entre Usuario, Herdr y Claude](docs/mermaid.png)
+
+- En la vista previa de un `.md` (pestaña de `file-editor`), los bloques ` ```mermaid ` se dibujan
+  como diagramas, con los colores del tema (oscuro o claro) y centrados en la columna; los
+  anchos se reducen para caber, también dentro de listas y citas.
+- Tipos: flowchart (`graph` / `flowchart`), secuencia, estados, clases, entidad-relación y
+  `xychart-beta`. Otros (pie, gantt, mindmap, …) muestran el aviso del renderizador y el código.
+- Mientras un diagrama se dibuja, o si no se puede, se ve su código.
+- Todo ocurre dentro de Herdr, sin navegador ni red: el renderizador es
+  [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) (MIT, con el motor de layout
+  elkjs, EPL-2.0), empaquetado en `vendor/beautiful-mermaid/`. Se carga solo la primera vez que
+  hace falta. Medido: 0,17 s esa carga y ~30 ms por diagrama (1 ms uno de secuencia).
+- Cada dibujo se guarda en `~/.config/herdr-app/cache/file-editor/mermaid/` según su código y
+  sus colores, así que al reabrir un documento no se vuelve a dibujar. Los de más de 30 días se
+  borran.
+
 ### Marca
 
 ![Splash de MrRomo: el logo sobre una lluvia de caracteres](docs/splash.png)
@@ -75,7 +93,7 @@ diálogo con el nombre, el ícono y el color:
   splash animado al abrir (`brand-splash`). Fuente Orbitrox (Orbitron Black, OFL).
 
 Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-api`, `nebula-web`,
-`orbit-cli`) y agentes Claude Haiku de prueba.
+`orbit-cli`, y `diagram-demo` la de Mermaid) y agentes Claude Haiku de prueba.
 
 ## Qué trae
 
@@ -90,7 +108,8 @@ Las capturas son de una instalación limpia con proyectos de ejemplo (`aurora-ap
 | `mods/space-menu` | Menú del clic derecho en un espacio; su Rename abre space-rename | propio (copia del `menu` de Herdr) | sí |
 | `mods/git-graph` | Grafo de git y acciones (panel Graph) | [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT | sí (`licenses/git-graph-MIT.txt`) |
 | `mods/git-changes` | Panel Changes estilo Zed (stage, commit, stash, push/pull, History y diff en el área principal); reemplaza al `changes` de Herdr en el layout | [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes) `94bacef`, MIT (con partes Apache-2.0 e ISC) | sí (`licenses/git-changes/`) |
-| `file-editor` | Explorador y editor con pestañas (panel Files) | [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor) v0.1.1 | **no**: se descarga |
+| `file-editor` | Explorador y editor con pestañas (panel Files); el parche dibuja los bloques ` ```mermaid ` de la vista previa de Markdown | [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor) v0.1.1 + `patches/file-editor.patch` | **no**: se descarga y se parcha |
+| `vendor/beautiful-mermaid` | El renderizador de Mermaid que usa el parche de file-editor: beautiful-mermaid 1.1.3 con elkjs 0.11.1 y entities 7.0.1 en un solo módulo para el QuickJS de Herdr (`build.sh` lo reconstruye) | [lukilabs/beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid), MIT; [kieler/elkjs](https://github.com/kieler/elkjs), EPL-2.0; [fb55/entities](https://github.com/fb55/entities), BSD-2-Clause | sí (`vendor/beautiful-mermaid/LICENSES.txt`); se instala en `mods/file-editor/vendor/` |
 | `spaces-icons` | Espacios con ícono, worktrees bajo su repo; el parche agrega el ícono elegido, el menú propio, `shift-f2` y conserva los colores al reiniciar | [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin) + `patches/spaces-icons.patch` | **no**: se descarga y se parcha |
 | `tabs-graph` | Pestañas en píldoras + Files / Changes / Graph | MarcozVD/herdr-layout-catppuccin + `patches/tabs-graph.patch` | **no**: se descarga y se parcha |
 | `herdr-catppuccin`, `herdr-catppuccin-latte` | Tema oscuro (mocha) y claro (latte); el layout sigue el modo del sistema | MarcozVD/herdr-layout-catppuccin | **no**: se descargan |
@@ -108,6 +127,7 @@ fuentes Geist / Geist Mono / JetBrains Mono también vienen con Herdr.
   con modelo y tokens (`agents-claude` corre su ayudante ahí). Sin él, la lista funciona igual,
   solo sin esa segunda línea.
 - `curl`, `tar` y `patch` para bajar las piezas de terceros; `rsync` y `diff` solo para `export.sh`.
+- `node` y `npm` solo para reconstruir el renderizador de Mermaid (`vendor/beautiful-mermaid/build.sh`).
 - Internet al instalar (GitHub).
 
 ## Instalar
@@ -120,8 +140,8 @@ cd ~/code/cyber-romo
 ```
 
 - Copia los mods y el layout de este repo a `~/.config/herdr-app` (o `$HERDR_HOME`).
-- Baja cada pieza de `third-party.json` del repo de su autor, en el commit fijado, y le aplica el
-  parche de `patches/` cuando lo tiene.
+- Baja cada pieza de `third-party.json` del repo de su autor, en el commit fijado, le aplica el
+  parche de `patches/` cuando lo tiene y le copia los archivos de este repo que lleve (`files`).
 - **Fusiona** `keys.json` y `settings.json`: lo que ya tengas se queda, y en un choque gana este
   paquete. `--no-config` los deja intactos.
 - Antes de reemplazar algo, lo copia a `~/.config/herdr-app-backups/cyber-romo-<fecha>/`.
@@ -145,6 +165,9 @@ que este repo no los copia. `third-party.json` dice de dónde sale cada uno:
   "path": "mods/spaces-icons", "patch": "patches/spaces-icons.patch" }
 ```
 
+`files` (solo `file-editor`) son archivos de este repo que van dentro del mod, enteros y con su
+propia licencia: `{ "<ruta en el mod>": "<ruta en este repo>" }`.
+
 `install.sh` lo hace solo. Un agente puede hacerlo a mano, para cada entrada:
 
 1. Bajar el repo en ese commit:
@@ -154,7 +177,9 @@ que este repo no los copia. `third-party.json` dice de dónde sale cada uno:
      muévela entera: Herdr acopla al layout un mod que ve sin su `mod.json`.
    - un tema (`kind: theme`): a `~/.config/herdr-app/themes/<name>.json`.
 3. Si tiene `patch`, aplicarlo dentro de la carpeta del mod: `patch -p1 -d mods/<name> < patches/<name>.patch`.
-4. `herdr-app check ~/.config/herdr-app/mods/<name>`.
+4. Si tiene `files`, copiar cada uno a su ruta dentro del mod (por ejemplo
+   `vendor/beautiful-mermaid/beautiful-mermaid.js` a `mods/file-editor/vendor/beautiful-mermaid.js`).
+5. `herdr-app check ~/.config/herdr-app/mods/<name>`.
 
 | Pieza | Repo | Commit |
 |---|---|---|
@@ -173,6 +198,9 @@ git diff && git commit -am "..."
 - Los mods de `MODS` (en `manifest.sh`) se copian tal cual.
 - De las piezas de `third-party.json` guarda solo la diferencia con el commit de su autor, como
   parche en `patches/`. Si un tema cambió, avisa: el parche solo cubre mods.
+- Los `files` quedan fuera del parche. Si la copia instalada difiere de la de este repo, avisa: el
+  renderizador de Mermaid se cambia aquí, con `vendor/beautiful-mermaid/build.sh` (sube las
+  versiones al principio del script).
 - Avisa si el layout usa un mod o tema que no está en el manifiesto ni en `third-party.json`.
 - Para exportar desde otro layout: `LAYOUT_SRC=otro ./export.sh`.
 
@@ -214,6 +242,11 @@ Los espacios y pestañas abiertos, los colores de cada espacio, tamaños y clics
 
 - Layout, `spaces-icons`, `tabs-graph` y temas catppuccin: [MarcozVD/herdr-layout-catppuccin](https://github.com/MarcozVD/herdr-layout-catppuccin).
 - `file-editor`: [werlang/herdr-file-editor](https://github.com/werlang/herdr-file-editor).
+- Diagramas Mermaid: [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) de Craft Docs (MIT), con
+  [elkjs](https://github.com/kieler/elkjs) (EPL-2.0; su código fuente está en ese repo, en el tag
+  0.11.1, y `build.sh` dice qué se le cambia para el QuickJS de Herdr) y
+  [entities](https://github.com/fb55/entities) de Felix Böhm (BSD-2-Clause). Licencias en
+  `vendor/beautiful-mermaid/LICENSES.txt`.
 - `git-graph`: [rabeeh-ta/herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph), MIT (`licenses/git-graph-MIT.txt`); íconos según Lucide (ISC).
 - `git-changes`: [aBER0724/herdr-git-changes](https://github.com/aBER0724/herdr-git-changes), MIT, de aBER; parte del código viene de herdr-git-graph (MIT), del panel Changes de Herdr (Apache-2.0) y de íconos Lucide (ISC). Licencias y aviso en `licenses/git-changes/`. Ejecuta solo `git` en el repo del terminal enfocado (en la máquina del espacio, si es remota); la red solo la usa git al hacer fetch, pull o push.
 - Orbitron: The League of Moveable Type, SIL Open Font License 1.1 (`mods/brand-title/fonts/LICENSE-Orbitron.txt`).

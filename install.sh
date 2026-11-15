@@ -99,13 +99,18 @@ done
 for m in "${MODS[@]}"; do install_mod "$m" "$REPO/mods/$m" ""; done
 
 # Third-party mods and themes: downloaded at their pinned commit, then cyber-romo's patch.
-while IFS=$'\t' read -r name kind repo commit path patch; do
+while IFS=$'\t' read -r name kind repo commit path patch files; do
   src="$(fetch "$repo" "$commit")" || die "could not download github.com/$repo at $commit (offline? see third-party.json)"
-  from=" (from github.com/$repo@${commit:0:7})"
-  [ "$patch" = - ] || from=" (from github.com/$repo@${commit:0:7} + patch)"
+  from="github.com/$repo@${commit:0:7}"
+  [ "$patch" = - ] || from="$from + patch"
+  [ "$files" = - ] || from="$from + $(added_files "$files" | wc -l | tr -d ' ') file(s) from this repo"
+  from=" (from $from)"
   if [ "$kind" = mod ]; then
     out="$STAGING/built/$name"
-    build_mod "$path" "$src" "$out" "$patch" || die "could not build $name: $patch does not apply to github.com/$repo@${commit:0:7}"
+    build_mod "$path" "$src" "$out" "$patch" "$files" || case $? in
+      3) die "could not build $name: a file third-party.json adds to it is missing from this repo" ;;
+      *) die "could not build $name: $patch does not apply to github.com/$repo@${commit:0:7}" ;;
+    esac
     install_mod "$name" "$out" "$from"
   else
     [ -f "$src/$path" ] || die "github.com/$repo@${commit:0:7} has no $path"

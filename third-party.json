@@ -1,5 +1,5 @@
 {
-  "about": "Pieces of cyber-romo that are other people's work with no license declared, so this repo does not copy them. install.sh downloads each one from its author's GitHub repo at the pinned commit (codeload.github.com/<repo>/tar.gz/<commit>), takes <path> from it, applies <patch> (cyber-romo's changes, `patch -p1` inside the mod folder) when there is one, and installs it as <name>. export.sh regenerates each patch from the live setup. An agent can do the same by hand: see the README's 'Piezas de terceros' section.",
+  "about": "Pieces of cyber-romo that are other people's work with no license declared, so this repo does not copy them. install.sh downloads each one from its author's GitHub repo at the pinned commit (codeload.github.com/<repo>/tar.gz/<commit>), takes <path> from it, applies <patch> (cyber-romo's changes, `patch -p1` inside the mod folder) when there is one, copies in <files> (path in the mod: path in this repo; code the patch uses that travels whole, with its own license) when there are any, and installs it as <name>. export.sh regenerates each patch from the live setup, leaving <files> out of it. An agent can do the same by hand: see the README's 'Piezas de terceros' section.",
   "items": [
     {
       "name": "file-editor",
@@ -7,9 +7,13 @@
       "repo": "werlang/herdr-file-editor",
       "commit": "ab5bceb4d53f876637451de83a8469994c5fd8b0",
       "path": "mods/file-editor",
-      "patch": null,
+      "patch": "patches/file-editor.patch",
+      "files": {
+        "vendor/beautiful-mermaid.js": "vendor/beautiful-mermaid/beautiful-mermaid.js",
+        "vendor/beautiful-mermaid.LICENSES.txt": "vendor/beautiful-mermaid/LICENSES.txt"
+      },
       "license": "none declared",
-      "what": "File explorer and tabbed editor (the Files panel), v0.1.1, used unchanged"
+      "what": "File explorer and tabbed editor (the Files panel), v0.1.1; the patch draws ```mermaid blocks in the Markdown preview as diagrams, with beautiful-mermaid (MIT; elkjs, EPL-2.0), which travels in this repo (vendor/beautiful-mermaid)"
     },
     {
       "name": "spaces-icons",

@@ -20,7 +20,8 @@ MODS=(
 
 # Third-party mods and themes with no license (file-editor, spaces-icons, tabs-graph, the
 # catppuccin themes) are NOT in this repo: third-party.json says where each comes from, and
-# install.sh downloads it and applies cyber-romo's patch (patches/).
+# install.sh downloads it, applies cyber-romo's patch (patches/) and copies in the files this
+# repo adds to it (file-editor's Mermaid renderer, vendor/beautiful-mermaid).
 
 # Herdr's own mods the package uses. Every Herdr install ships them; they are never copied.
 SHIPPED=(workspace-chrome workspace-status pane changes files menu new-menu toast confirm prompt peek help worktree machine-add)

@@ -1,12 +1,14 @@
 # Helpers for the third-party pieces (third-party.json). Sourced by install.sh and export.sh,
 # after manifest.sh, with REPO set and FETCHED naming an empty scratch folder.
 
-# One line per piece: name, kind (mod or theme), repo, commit, path, patch ("-" for none).
+# One line per piece: name, kind (mod or theme), repo, commit, path, patch ("-" for none),
+# files ("-" for none, else "<in the mod>=<in this repo>" pairs joined by ";").
 third_party() {
   python3 - "$REPO/third-party.json" <<'PY'
 import json, sys
 for e in json.load(open(sys.argv[1]))["items"]:
-    print("\t".join([e["name"], e["kind"], e["repo"], e["commit"], e["path"], e.get("patch") or "-"]))
+    files = ";".join("%s=%s" % (k, v) for k, v in (e.get("files") or {}).items()) or "-"
+    print("\t".join([e["name"], e["kind"], e["repo"], e["commit"], e["path"], e.get("patch") or "-", files]))
 PY
 }
 
@@ -32,9 +34,10 @@ fetch() {
 }
 
 # Builds third-party mod $1 into folder $3 from the downloaded repo folder $2: its <path>,
-# then its patch when it has one ($4 relative to the repo, "-" for none).
+# then its patch when it has one ($4 relative to the repo, "-" for none), then the files this
+# repo adds to it ($5, as third_party prints them: code the patch uses that travels whole).
 build_mod() {
-  local path="$1" src="$2" out="$3" patch="$4"
+  local path="$1" src="$2" out="$3" patch="$4" files="${5:--}"
   [ -d "$src/$path" ] || return 1
   rm -rf "$out"
   mkdir -p "$out"
@@ -43,4 +46,15 @@ build_mod() {
     patch -p1 -s -N -d "$out" < "$REPO/$patch" >/dev/null || return 2
     find "$out" \( -name '*.orig' -o -name '*.rej' \) -delete
   fi
+  local pair
+  for pair in $(added_files "$files"); do
+    [ -f "$REPO/${pair#*=}" ] || return 3
+    mkdir -p "$out/$(dirname "${pair%%=*}")"
+    cp "$REPO/${pair#*=}" "$out/${pair%%=*}"
+  done
+}
+
+# The "<in the mod>=<in this repo>" pairs of a files column, one per line (none for "-").
+added_files() {
+  [ "${1:--}" = "-" ] || printf '%s\n' "$1" | tr ';' '\n'
 }
