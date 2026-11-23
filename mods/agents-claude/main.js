@@ -58,13 +58,39 @@ function tokens(n) {
   return `${(n / 1000000).toFixed(2)}M`;
 }
 
+// An orange the theme doesn't have (ANSI has none): its red turned to hue 25°, so it keeps
+// the theme's saturation and lightness, light or dark.
+function orange(red) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(red.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  const s = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => { const k = (n + 25 / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return `#${[0, 8, 4].map((n) => Math.round(f(n) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// The context tokens' color, by how much: green, yellow and orange up to 500k, red past it.
+const TOKEN_SCALE = [
+  [150000, (t) => t.ansi2],
+  [300000, (t) => t.ansi3],
+  [500000, (t) => orange(t.ansi1)],
+  [Infinity, (t) => t.ansi1],
+];
+const tokenColor = (t, n) => TOKEN_SCALE.find(([below]) => n < below)[1](t);
+
 // The second line: "Opus 5.5 · xhigh · 128k tokens" (the effort only where Claude records
-// it), or null when there's nothing to say. "~" marks an estimate: a session compacted since
-// its last reply.
-function facts(info) {
-  const ctx = info?.ctx != null ? `${info.est ? "~" : ""}${tokens(info.ctx)} tokens` : null;
-  const bits = [modelName(info?.model), info?.effort || null, ctx].filter(Boolean);
-  return bits.length ? bits.join(" · ") : null;
+// it), the tokens colored by TOKEN_SCALE, or null when there's nothing to say. "~" marks an
+// estimate: a session compacted since its last reply. The tokens never truncate: the model does.
+function facts(t, info) {
+  const lead = [modelName(info?.model), info?.effort || null].filter(Boolean).join(" · ");
+  const n = info?.ctx;
+  if (!lead && n == null) return null;
+  return h_flex()
+    .min_w(0)
+    .text_size(11)
+    .text_color(t.dim)
+    .when(Boolean(lead), (el) => el.child(div().min_w(0).truncate().child(n != null ? `${lead} · ` : lead)))
+    .when(n != null, (el) => el.child(div().flex_none().text_color(tokenColor(t, n)).child(`${info.est ? "~" : ""}${tokens(n)} tokens`)));
 }
 
 function find(node, id) {
@@ -416,7 +442,7 @@ export default class Agents extends View {
   claudeSubRow(t, s, parent, compact) {
     const c = s.c;
     const pic = icon(parent.program, 14, t.foreground);
-    const more = facts(c);
+    const more = facts(t, c);
     return v_flex()
       .id(`csub-${parent.address}-${c.id}`)
       .relative()
@@ -439,7 +465,7 @@ export default class Agents extends View {
           .when(Boolean(c.desc), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`· ${c.desc}`))))
         .when(Boolean(c.at), el => el.child(div().flex_none().ml(6).text_size(11).text_color(t.dim).child(duration(Date.now() - c.at))))
         .child(div().ml(6).child(this.status(t, { status: "working" }, compact))))
-      .when(Boolean(more), el => el.child(div().mt(-5).pl(s.lines.length * 13 + (pic ? 22 : 0)).text_size(11).text_color(t.dim).truncate().child(more)));
+      .when(Boolean(more), el => el.child(more.mt(-5).pl(s.lines.length * 13 + (pic ? 22 : 0))));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -534,7 +560,7 @@ export default class Agents extends View {
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
     const on = k.address === shown;
-    const more = facts(this.claude?.[k.address]);
+    const more = facts(t, this.claude?.[k.address]);
     const frame = (el) => el
       .id(`sub-${k.address}`)
       .relative()
@@ -559,7 +585,7 @@ export default class Agents extends View {
     return frame(v_flex())
       .pb(4)
       .child(line(h_flex()))
-      .child(div().mt(-5).pl(s.lines.length * 13 + (pic ? 22 : 0)).text_size(11).text_color(t.dim).truncate().child(more));
+      .child(more.mt(-5).pl(s.lines.length * 13 + (pic ? 22 : 0)));
   }
 
   // compact: a ! for blocked where a header already says "Needs you".
@@ -712,7 +738,7 @@ export default class Agents extends View {
       const full = byPriority || isPinned;
       const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
       // Claude Code: model and context tokens on a second line, under the name.
-      const second = facts(this.claude?.[a.address]);
+      const second = facts(t, this.claude?.[a.address]);
       const frame = (el) => el
         .id(`ag-${a.address}`)
         .relative()
@@ -750,7 +776,7 @@ export default class Agents extends View {
         .pt(4)
         .pb(5)
         .child(line(h_flex()).h(22))
-        .child(div().pl((slot ? SLOT : 0) + (pic ? 25 : 0)).text_size(11).text_color(t.dim).truncate().child(second));
+        .child(second.pl((slot ? SLOT : 0) + (pic ? 25 : 0)));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
