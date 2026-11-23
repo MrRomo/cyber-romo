@@ -69,11 +69,11 @@ function orange(red) {
   return `#${[0, 8, 4].map((n) => Math.round(f(n) * 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
-// The context tokens' color, by how much: green, yellow and orange up to 500k, red past it.
+// The context tokens' color, by how much: green, yellow and orange up to 350k, red past it.
 const TOKEN_SCALE = [
-  [150000, (t) => t.ansi2],
-  [300000, (t) => t.ansi3],
-  [500000, (t) => orange(t.ansi1)],
+  [100000, (t) => t.ansi2],
+  [200000, (t) => t.ansi3],
+  [350000, (t) => orange(t.ansi1)],
   [Infinity, (t) => t.ansi1],
 ];
 const tokenColor = (t, n) => TOKEN_SCALE.find(([below]) => n < below)[1](t);

@@ -13,8 +13,8 @@ y ajustes.
 ![Lista de agentes: a la izquierda un Claude trabajando con dos sub-agentes Explore debajo; a la derecha el mismo Claude plegado con un contador de 2, y otro esperando respuesta (Needs you)](docs/agents.png)
 
 - Debajo de cada Claude Code: `modelo · esfuerzo · tokens de contexto` (por ejemplo `Haiku 5.5 · high · 45.7k tokens`).
-- Los tokens cambian de color según cuántos van: verde hasta 150k, amarillo hasta 300k, naranja
-  hasta 500k y rojo desde 500k. Son los colores ANSI del tema (el naranja sale de su rojo), así
+- Los tokens cambian de color según cuántos van: verde hasta 100k, amarillo hasta 200k, naranja
+  hasta 350k y rojo desde 350k. Son los colores ANSI del tema (el naranja sale de su rojo), así
   que siguen al tema claro y al oscuro. Los cortes están en `TOKEN_SCALE`, en `main.js`.
 - Los sub-agentes de Claude (los que lanza con la herramienta Agent, que no tienen terminal propia)
   aparecen debajo de su agente mientras trabajan, con su tipo, su tarea, el tiempo y su propia línea
